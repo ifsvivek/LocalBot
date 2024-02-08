@@ -17,7 +17,7 @@ games = ["with ZENON's Mom", "with ZENON's Mom in Bed", "with ZENON's Mom in Kit
 @bot.event
 async def on_ready():
     print(f"{bot.user} is ready and online!")
-    await update_status()
+    await update_status.start()  # Start the status update task
 
 async def update_status():
     while True:
@@ -43,6 +43,19 @@ async def cat(ctx):
     else:
         await ctx.send("Failed to fetch cat image. Try again later.")
 
+@bot.command()
+async def dog(ctx):
+    try:
+        response = requests.get('https://api.thedogapi.com/v1/images/search')
+        if response.status_code == 200:
+            data = response.json()
+            dog_image_link = data[0]['url']
+            await ctx.send(f"Here's a dog for you: {dog_image_link}")
+        else:
+            await ctx.send("Failed to fetch dog image. Try again later.")
+    except Exception as e:
+        await ctx.send(f"An error occurred: {e}")
+
 @bot.command(name='echo')
 async def echo(ctx, *, message):
     await ctx.message.delete()
@@ -52,7 +65,7 @@ async def echo(ctx, *, message):
 @bot.command()
 async def gtn(ctx):
     secret_number = random.randint(1, 10)
-    print("Secret Number:",secret_number)
+    print("Secret Number:", secret_number)
     await ctx.send('Guess a number between 1 and 10.')
 
     def check(message):
@@ -60,8 +73,9 @@ async def gtn(ctx):
 
     try:
         guess = await bot.wait_for('message', check=check, timeout=10.0)
-        if 1 <= int(guess.content) <= 10:
-            if int(guess.content) == secret_number:
+        guess_number = int(guess.content)
+        if 1 <= guess_number <= 10:
+            if guess_number == secret_number:
                 await ctx.send('You guessed it!')
             else:
                 await ctx.send('Nope, try again.')
@@ -88,7 +102,5 @@ async def flip(ctx):
 async def shalli(ctx):
     result = random.choice(["Yes", "No"])
     await ctx.send(result)
-
-
 
 bot.run(os.getenv('TOKEN'))
