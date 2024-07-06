@@ -36,6 +36,7 @@ def get_response(message):
 @bot.event
 async def on_ready():
     print(f"{bot.user} is ready and online!")
+    await bot.change_presence(activity=discord.Game(name="Running on Server"))
 
 
 @bot.event
