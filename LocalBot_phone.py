@@ -36,7 +36,7 @@ async def cat(ctx):
     if response.status_code == 200:
         data = response.json()
         cat_image_link = data[0]["url"]
-        await ctx.message.reply(f"Here's a cat for you: {cat_image_link}")
+        await ctx.message.reply(cat_image_link)
     else:
         await ctx.message.reply("Failed to fetch cat image. Try again later.")
 
@@ -48,7 +48,7 @@ async def dog(ctx):
         if response.status_code == 200:
             data = response.json()
             dog_image_link = data[0]["url"]
-            await ctx.message.reply(f"Here's a dog for you: {dog_image_link}")
+            await ctx.message.reply(dog_image_link)
         else:
             await ctx.message.reply("Failed to fetch dog image. Try again later.")
     except Exception as e:
