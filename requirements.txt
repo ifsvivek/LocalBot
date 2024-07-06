@@ -1,3 +1,5 @@
 discord.py
 python-dotenv
 requests
+py-cord
+tranformers
