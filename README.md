@@ -24,7 +24,7 @@ Once the bot is running and connected to your Discord server, users can interact
 - `$hello`: Greets the user.
 - `$dice [sides]`: Rolls a dice with the specified number of sides (default is 6).
 - `$flip`: Flips a coin.
-- `$shalli`: Provides a yes/no response randomly.
+- `$ask`: Provides a yes/no response randomly.
 - `$chat [message]`: Engages in a chat with the bot using the text-generation model.
 
 ## Contributing

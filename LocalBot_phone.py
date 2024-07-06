@@ -96,7 +96,7 @@ async def flip(ctx):
 
 
 @bot.command(description="Ask the bot a yes/no question.")
-async def shalli(ctx):
+async def ask(ctx):
     result = random.choice(["Yes", "No"])
     await ctx.message.reply(result)
 
