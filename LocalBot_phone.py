@@ -116,10 +116,8 @@ async def ask(ctx):
 async def chat(ctx, *, message):
     try:
         response = ollama_chat(message, model_name)
-        # Check if the response is longer than 2000 characters
         if len(response) > 2000:
-            # Split the response into chunks of 2000 characters
-            chunks = [response[i:i+2000] for i in range(0, len(response), 2000)]
+            chunks = [response[i : i + 2000] for i in range(0, len(response), 2000)]
             for chunk in chunks:
                 await ctx.message.reply(chunk)
         else:
