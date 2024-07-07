@@ -1,16 +1,27 @@
-import discord
-import os
+import discord, os, requests, json, random, asyncio
 from dotenv import load_dotenv
 from discord.ext import commands
-import random
-import asyncio
-import requests
+
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="$", intents=intents)
+OLLAMA_API_URL = "http://127.0.0.1:11434/api/generate"
+model_name = "llama3"
+
+
+def ollama_chat(prompt, model):
+    payload = {"prompt": prompt, "model": model, "max_tokens": 150}
+    response = requests.post(OLLAMA_API_URL, json=payload)
+    response.raise_for_status()
+    parts = response.text.strip().split("\n")
+    combined_response = ""
+    for part in parts:
+        json_part = json.loads(part)
+        combined_response += json_part.get("response", "")
+    return combined_response
 
 
 @bot.event
@@ -103,9 +114,18 @@ async def ask(ctx):
 
 @bot.command()
 async def chat(ctx, *, message):
-    await ctx.message.reply(
-        "I am currently running on a phone, so I am unable to chat."
-    )
+    try:
+        response = ollama_chat(message, model_name)
+        # Check if the response is longer than 2000 characters
+        if len(response) > 2000:
+            # Split the response into chunks of 2000 characters
+            chunks = [response[i:i+2000] for i in range(0, len(response), 2000)]
+            for chunk in chunks:
+                await ctx.message.reply(chunk)
+        else:
+            await ctx.message.reply(response)
+    except Exception as e:
+        print(e)
 
 
 bot.run(TOKEN)
