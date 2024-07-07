@@ -1,36 +1,27 @@
-import discord
-import os
+import discord, requests, json, random, asyncio, os
 from dotenv import load_dotenv
 from discord.ext import commands
-import random
-import asyncio
-import requests
-from transformers import pipeline
+
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="$", intents=intents)
-pipe = pipeline("text-generation", model="tiny/", device_map="auto")
+OLLAMA_API_URL = "http://127.0.0.1:11434/api/generate"
+model_name = "llama3"
 
 
-def get_response(message):
-    messages = [
-        {"role": "user", "content": message},
-    ]
-    prompt = pipe.tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
-    outputs = pipe(
-        prompt,
-        max_new_tokens=1024,
-        do_sample=True,
-        temperature=0.7,
-        top_k=50,
-        top_p=0.95,
-    )
-    return outputs[0]["generated_text"]
+def ollama_chat(prompt, model):
+    payload = {"prompt": prompt, "model": model, "max_tokens": 150}
+    response = requests.post(OLLAMA_API_URL, json=payload)
+    response.raise_for_status()
+    parts = response.text.strip().split("\n")
+    combined_response = ""
+    for part in parts:
+        json_part = json.loads(part)
+        combined_response += json_part.get("response", "")
+    return combined_response
 
 
 @bot.event
@@ -123,18 +114,16 @@ async def ask(ctx):
 
 @bot.command()
 async def chat(ctx, *, message):
-    full_response = get_response(message)
-    simplified_response = full_response.split("</s>")[1].strip()
-    simplified_response = simplified_response.replace("<|assistant|>", "")
-    if len(simplified_response) > 2000:
-        parts = [
-            simplified_response[i : i + 2000]
-            for i in range(0, len(simplified_response), 2000)
-        ]
-        for part in parts:
-            await ctx.message.reply(part)
-    else:
-        await ctx.message.reply(simplified_response)
+    try:
+        response = ollama_chat(message, model_name)
+        if len(response) > 2000:
+            chunks = [response[i : i + 2000] for i in range(0, len(response), 2000)]
+            for chunk in chunks:
+                await ctx.message.reply(chunk)
+        else:
+            await ctx.message.reply(response)
+    except Exception as e:
+        print(e)
 
 
 bot.run(TOKEN)
