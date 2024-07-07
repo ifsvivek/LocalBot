@@ -114,16 +114,17 @@ async def ask(ctx):
 
 @bot.command()
 async def chat(ctx, *, message):
-    try:
-        response = ollama_chat(message, model_name)
-        if len(response) > 2000:
-            chunks = [response[i : i + 2000] for i in range(0, len(response), 2000)]
-            for chunk in chunks:
-                await ctx.message.reply(chunk)
-        else:
-            await ctx.message.reply(response)
-    except Exception as e:
-        print(e)
+    async with ctx.typing():
+        try:
+            response = ollama_chat(message, model_name)
+            if len(response) > 2000:
+                chunks = [response[i : i + 2000] for i in range(0, len(response), 2000)]
+                for chunk in chunks:
+                    await ctx.message.reply(chunk)
+            else:
+                await ctx.message.reply(response)
+        except Exception as e:
+            print(e)
 
 
 bot.run(TOKEN)
