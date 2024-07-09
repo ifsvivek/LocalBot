@@ -270,6 +270,8 @@ async def lc(ctx):
         value="Generates an image based on the provided prompt. `--magic`: Uses a magic prompt. `--model`: Specify the model to use for image generation. Range: [0, 1, 2, 3, 4].",
         inline=False,
     )
+    embed.add_field(name="`/purge [amount]` or `$purge [amount]`", value="Deletes the specified number of messages in the channel. Requires the `Manage Messages` permission.", inline=False)
+    embed.add_field(name="`/clear [amount]` or `$clear [amount]`", value="Clears the specified number of messages in the DM.", inline=False)
 
     await ctx.send(embed=embed)
 
