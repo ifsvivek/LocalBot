@@ -211,4 +211,24 @@ async def imagine(ctx, *, args):
         print(e)
 
 
+@bot.command(description="Delete a set number of messages.")
+async def purge(ctx, amount: int):
+    await ctx.channel.purge(limit=amount + 1)
+    await ctx.respond(f"Deleted {amount} messages.")
+
+
+@bot.command(description="Delete a set number of bot messages in DM")
+async def clear(ctx, amount: int = 5):
+    if isinstance(ctx.channel, discord.DMChannel):
+        messages = await ctx.channel.history(limit=amount).flatten()
+        bot_messages = [msg for msg in messages if msg.author == bot.user]
+        for msg in bot_messages:
+            await msg.delete()
+        confirmation_msg = await ctx.send(f"Deleted {len(bot_messages)} messages.")
+        await asyncio.sleep(5)
+        await confirmation_msg.delete()
+    else:
+        await ctx.respond("This command can only be used in direct messages.")
+
+
 bot.run(TOKEN)
