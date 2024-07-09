@@ -271,7 +271,7 @@ async def lc(ctx):
         inline=False,
     )
     embed.add_field(name="`/purge [amount]` or `$purge [amount]`", value="Deletes the specified number of messages in the channel. Requires the `Manage Messages` permission.", inline=False)
-    embed.add_field(name="`/clear [amount]` or `$clear [amount]`", value="Clears the specified number of messages in the DM.", inline=False)
+    embed.add_field(name="`$clear [amount]`", value="Clears the specified number of messages in the DM.", inline=False)
 
     await ctx.message.reply(embed=embed)
     
