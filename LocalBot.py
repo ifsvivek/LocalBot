@@ -1,6 +1,9 @@
-import discord, requests, json, random, asyncio, os
+import discord, requests, json, random, asyncio, os, shlex, base64, argparse, time
 from dotenv import load_dotenv
 from discord.ext import commands
+from discord import File
+from PIL import Image
+from io import BytesIO
 
 
 load_dotenv()
@@ -22,6 +25,33 @@ def ollama_chat(prompt, model):
         json_part = json.loads(part)
         combined_response += json_part.get("response", "")
     return combined_response
+
+
+def generate_image(prompt, model_id=0, use_refiner=False, magic_prompt=False):
+    output_dir = "img"
+    os.makedirs(output_dir, exist_ok=True)
+
+    url = "https://diffusion.ayushmanmuduli.com/gen"
+    params = {
+        "prompt": prompt,
+        "model_id": model_id,
+        "use_refiner": use_refiner,
+        "magic_prompt": magic_prompt,
+    }
+
+    response = requests.get(url, params=params)
+
+    if response.status_code == 200:
+        data = response.json()
+        base64_image_string = data["image"]
+        image_data = base64.b64decode(base64_image_string)
+        image = Image.open(BytesIO(image_data))
+        timestamp = int(time.time())
+        image_path = os.path.join(output_dir, f"img_{timestamp}.png")
+        image.save(image_path)
+
+        return image_path
+    return None
 
 
 @bot.event
@@ -112,7 +142,7 @@ async def ask(ctx):
     await ctx.respond(result)
 
 
-@bot.command()
+@bot.command(description="Chat with the bot.")
 async def chat(ctx, *, message):
     async with ctx.typing():
         try:
@@ -138,6 +168,46 @@ async def chat(ctx, *, message):
                     await ctx.send(chunk)
         except Exception as e:
             print(e)
+
+
+@bot.command(description="Generate an image based on a prompt.")
+async def imagine(ctx, *, args):
+    args_list = shlex.split(args)
+    prompt_parts = []
+    while args_list and not args_list[0].startswith("--"):
+        prompt_parts.append(args_list.pop(0))
+    prompt = " ".join(prompt_parts)
+    parser = argparse.ArgumentParser(
+        description="Generate an image based on a prompt.", add_help=False
+    )
+    parser.add_argument("--model", type=int, default=0, help="The model ID to use.")
+    parser.add_argument(
+        "--refiner", action="store_true", help="Whether to use the refiner."
+    )
+    parser.add_argument(
+        "--magic", action="store_true", help="Whether to use magic prompt."
+    )
+
+    try:
+        parsed_args, unknown = parser.parse_known_args(args_list)
+        if not prompt:
+            await ctx.message.reply("You must provide a prompt.")
+            return
+        image_path = generate_image(
+            prompt=prompt,
+            model_id=parsed_args.model,
+            use_refiner=parsed_args.refiner,
+            magic_prompt=parsed_args.magic,
+        )
+        if image_path is None:
+            await ctx.message.reply("Failed to generate an image. Please try again.")
+            return
+        with open(image_path, "rb") as image:
+            await ctx.message.reply(file=File(image, filename="image.png"))
+        if os.path.exists(image_path):
+            os.remove(image_path)
+    except Exception as e:
+        print(e)
 
 
 bot.run(TOKEN)
