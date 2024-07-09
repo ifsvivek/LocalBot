@@ -117,13 +117,15 @@ async def chat(ctx, *, message):
     async with ctx.typing():
         try:
             if ctx.message.reference:
-                original_message = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+                original_message = await ctx.channel.fetch_message(
+                    ctx.message.reference.message_id
+                )
                 message = original_message.content + "\n" + message
 
             response = ollama_chat(message, model_name)
             is_first_chunk = True
             while response:
-                split_at = response.rfind('\n', 0, 2000)
+                split_at = response.rfind("\n", 0, 2000)
                 if split_at == -1 or split_at > 2000:
                     split_at = 2000
                 chunk = response[:split_at].strip()
