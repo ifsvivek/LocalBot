@@ -10,6 +10,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="$", intents=intents)
 OLLAMA_API_URL = "http://127.0.0.1:11434/api/generate"
 model_name = "tinyllama"
+chunk_size = 2000
 
 
 def ollama_chat(prompt, model):
@@ -117,16 +118,20 @@ async def chat(ctx, *, message):
     async with ctx.typing():
         try:
             if ctx.message.reference:
-                original_message = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+                original_message = await ctx.channel.fetch_message(
+                    ctx.message.reference.message_id
+                )
                 message = original_message.content + "\n" + message
 
             response = ollama_chat(message, model_name)
-            if len(response) > 2000:
-                chunks = [response[i : i + 2000] for i in range(0, len(response), 2000)]
-                for chunk in chunks:
+            is_first_chunk = True
+            for start in range(0, len(response), chunk_size):
+                chunk = response[start : start + chunk_size]
+                if is_first_chunk:
                     await ctx.message.reply(chunk)
-            else:
-                await ctx.message.reply(response)
+                    is_first_chunk = False
+                else:
+                    await ctx.send(chunk)
         except Exception as e:
             print(e)
 

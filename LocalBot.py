@@ -121,12 +121,19 @@ async def chat(ctx, *, message):
                 message = original_message.content + "\n" + message
 
             response = ollama_chat(message, model_name)
-            if len(response) > 2000:
-                chunks = [response[i : i + 2000] for i in range(0, len(response), 2000)]
-                for chunk in chunks:
+            is_first_chunk = True
+            while response:
+                split_at = response.rfind('\n', 0, 2000)
+                if split_at == -1 or split_at > 2000:
+                    split_at = 2000
+                chunk = response[:split_at].strip()
+                response = response[split_at:].strip()
+
+                if is_first_chunk:
                     await ctx.message.reply(chunk)
-            else:
-                await ctx.message.reply(response)
+                    is_first_chunk = False
+                else:
+                    await ctx.send(chunk)
         except Exception as e:
             print(e)
 
