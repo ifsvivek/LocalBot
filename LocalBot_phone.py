@@ -116,6 +116,10 @@ async def ask(ctx):
 async def chat(ctx, *, message):
     async with ctx.typing():
         try:
+            if ctx.message.reference:
+                original_message = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+                message = original_message.content + "\n" + message
+
             response = ollama_chat(message, model_name)
             if len(response) > 2000:
                 chunks = [response[i : i + 2000] for i in range(0, len(response), 2000)]
