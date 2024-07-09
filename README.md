@@ -19,17 +19,17 @@ Once the bot is running and connected to your Discord server, users can interact
 
 ### Available Commands
 
-| Command         | Description                                                       | Options/Notes                                        |
-|-----------------|-------------------------------------------------------------------|------------------------------------------------------|
-| `/cat`          | Sends a random cat image.                                         |                                                      |
-| `/dog`          | Sends a random dog image.                                         |                                                      |
-| `/gtn`          | Starts a number guessing game.                                    |                                                      |
-| `/hello`        | Greets the user.                                                  |                                                      |
-| `/dice [sides]` | Rolls a dice with the specified number of sides.                  | Default is 6 sides if none specified.                |
-| `/flip`         | Flips a coin.                                                     |                                                      |
-| `/ask`          | Provides a yes/no response randomly.                              |                                                      |
-| `/chat [message]` | Engages in a chat with the bot using the text-generation model. |                                                      |
-| `/imagine [prompt]` | Generates an image based on the provided prompt.               | `--magic`: Uses a magic prompt.<br>`--model`: Specify the model to use for image generation. Range: [0, 1, 2, 3, 4]. |
+| Command                                    | Description                                                     | Options/Notes                                                                                                        |
+| ------------------------------------------ | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `/cat` or `$cat`                           | Sends a random cat image.                                       |                                                                                                                      |
+| `/dog` or `$dog`                           | Sends a random dog image.                                       |                                                                                                                      |
+| `/gtn` or `$gtn`                           | Starts a number guessing game.                                  |                                                                                                                      |
+| `/hello` or `$hello`                       | Greets the user.                                                |                                                                                                                      |
+| `/dice [sides]` or `$dice [sides]`         | Rolls a dice with the specified number of sides.                | Default is 6 sides if none specified.                                                                                |
+| `/flip` or `$flip`                         | Flips a coin.                                                   |                                                                                                                      |
+| `/ask` or `$ask`                           | Provides a yes/no response randomly.                            |                                                                                                                      |
+| `/chat [message]` or `$chat [message]`     | Engages in a chat with the bot using the text-generation model. |                                                                                                                      |
+| `/imagine [prompt]` or `$imagine [prompt]` | Generates an image based on the provided prompt.                | `--magic`: Uses a magic prompt.<br>`--model`: Specify the model to use for image generation. Range: [0, 1, 2, 3, 4]. |
 
 
 

@@ -1,7 +1,7 @@
 import discord, requests, json, random, asyncio, os, shlex, base64, argparse, time
 from dotenv import load_dotenv
 from discord.ext import commands
-from discord import File
+from discord import File, Embed
 from PIL import Image
 from io import BytesIO
 
@@ -230,5 +230,47 @@ async def clear(ctx, amount: int = 5):
     else:
         await ctx.respond("This command can only be used in direct messages.")
 
+@bot.command(description="List all the commands available.")
+async def lc(ctx):
+    embed = Embed(
+        title="Available Commands",
+        description="List of all commands and their descriptions.",
+        color=0x00FF00,
+    )
 
+    # Add commands as fields
+    embed.add_field(
+        name="`/cat` or `$cat`", value="Sends a random cat image.", inline=False
+    )
+    embed.add_field(
+        name="`/dog` or `$dog`", value="Sends a random dog image.", inline=False
+    )
+    embed.add_field(
+        name="`/gtn` or `$gtn`", value="Starts a number guessing game.", inline=False
+    )
+    embed.add_field(name="`/hello` or `$hello`", value="Greets the user.", inline=False)
+    embed.add_field(
+        name="`/dice [sides]` or `$dice [sides]`",
+        value="Rolls a dice with the specified number of sides. Default is 6 sides if none specified.",
+        inline=False,
+    )
+    embed.add_field(name="`/flip` or `$flip`", value="Flips a coin.", inline=False)
+    embed.add_field(
+        name="`/ask` or `$ask`",
+        value="Provides a yes/no response randomly.",
+        inline=False,
+    )
+    embed.add_field(
+        name="`/chat [message]` or `$chat [message]`",
+        value="Engages in a chat with the bot using the text-generation model.",
+        inline=False,
+    )
+    embed.add_field(
+        name="`/imagine [prompt]` or `$imagine [prompt]`",
+        value="Generates an image based on the provided prompt. `--magic`: Uses a magic prompt. `--model`: Specify the model to use for image generation. Range: [0, 1, 2, 3, 4].",
+        inline=False,
+    )
+
+    await ctx.send(embed=embed)
+    
 bot.run(TOKEN)
