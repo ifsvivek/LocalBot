@@ -273,6 +273,6 @@ async def lc(ctx):
     embed.add_field(name="`/purge [amount]` or `$purge [amount]`", value="Deletes the specified number of messages in the channel. Requires the `Manage Messages` permission.", inline=False)
     embed.add_field(name="`/clear [amount]` or `$clear [amount]`", value="Clears the specified number of messages in the DM.", inline=False)
 
-    await ctx.send(embed=embed)
+    await ctx.message.reply(embed=embed)
     
 bot.run(TOKEN)
