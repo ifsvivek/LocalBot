@@ -18,15 +18,20 @@ This Discord bot is a fun and interactive bot that provides various commands to 
 Once the bot is running and connected to your Discord server, users can interact with it using various commands prefixed with `$`. The bot supports both traditional commands and slash commands for enhanced interaction within Discord.
 
 ### Available Commands
-- `/cat`: Sends a random cat image.
-- `/dog`: Sends a random dog image.
-- `/gtn`: Starts a number guessing game.
-- `/hello`: Greets the user.
-- `/dice [sides]`: Rolls a dice with the specified number of sides (default is 6).
-- `/flip`: Flips a coin.
-- `/ask`: Provides a yes/no response randomly.
-- `/chat [message]`: Engages in a chat with the bot using the text-generation model.
-- `/imagine [prompt]`: Generates an image based on the provided prompt.
+
+| Command         | Description                                                       | Options/Notes                                        |
+|-----------------|-------------------------------------------------------------------|------------------------------------------------------|
+| `/cat`          | Sends a random cat image.                                         |                                                      |
+| `/dog`          | Sends a random dog image.                                         |                                                      |
+| `/gtn`          | Starts a number guessing game.                                    |                                                      |
+| `/hello`        | Greets the user.                                                  |                                                      |
+| `/dice [sides]` | Rolls a dice with the specified number of sides.                  | Default is 6 sides if none specified.                |
+| `/flip`         | Flips a coin.                                                     |                                                      |
+| `/ask`          | Provides a yes/no response randomly.                              |                                                      |
+| `/chat [message]` | Engages in a chat with the bot using the text-generation model. |                                                      |
+| `/imagine [prompt]` | Generates an image based on the provided prompt.               | `--magic`: Uses a magic prompt.<br>`--model`: Specify the model to use for image generation. Range: [0, 1, 2, 3, 4]. |
+
+
 
 ## Contributing
 Contributions to the project are welcome. If you have any suggestions, bug fixes, or additional features you'd like to implement, feel free to fork the repository, make your changes, and submit a pull request.
