@@ -27,7 +27,7 @@ def ollama_chat(prompt, model):
     return combined_response
 
 
-def generate_image(prompt, model_id=0, use_refiner=False, magic_prompt=False):
+def generate_image(prompt, model_id=0, use_refiner=False, magic_prompt=False, calc_metrics=False):
     output_dir = "img"
     os.makedirs(output_dir, exist_ok=True)
 
@@ -37,6 +37,7 @@ def generate_image(prompt, model_id=0, use_refiner=False, magic_prompt=False):
         "model_id": model_id,
         "use_refiner": use_refiner,
         "magic_prompt": magic_prompt,
+        "calc_metrics": calc_metrics,
     }
 
     response = requests.get(url, params=params)
@@ -174,11 +175,14 @@ async def chat(ctx, *, message):
 async def imagine(ctx, *, args):
     start_time = time.time()
 
-    args_list = shlex.split(args)
-    prompt_parts = []
-    while args_list and not args_list[0].startswith("--"):
-        prompt_parts.append(args_list.pop(0))
-    prompt = " ".join(prompt_parts)
+    flag_index = args.find(" --")
+    if flag_index != -1:
+        prompt = args[:flag_index]
+        args_list = args[flag_index + 1:].split()
+    else:
+        prompt = args
+        args_list = []
+
     parser = argparse.ArgumentParser(
         description="Generate an image based on a prompt.", add_help=False
     )
@@ -273,12 +277,20 @@ async def lc(ctx):
         inline=False,
     )
     embed.add_field(
-        name="`/imagine [prompt]` or `$imagine [prompt]`",
+        name="`$imagine [prompt]`",
         value="Generates an image based on the provided prompt. `--magic`: Uses a magic prompt. `--model`: Specify the model to use for image generation. Range: [0, 1, 2, 3, 4].",
         inline=False,
     )
-    embed.add_field(name="`/purge [amount]` or `$purge [amount]`", value="Deletes the specified number of messages in the channel. Requires the `Manage Messages` permission.", inline=False)
-    embed.add_field(name="`$clear [amount]`", value="Clears the specified number of messages in the DM.", inline=False)
+    embed.add_field(
+        name="`/purge [amount]` or `$purge [amount]`",
+        value="Deletes the specified number of messages in the channel. Requires the `Manage Messages` permission.",
+        inline=False,
+    )
+    embed.add_field(
+        name="`$clear [amount]`",
+        value="Clears the specified number of messages in the DM.",
+        inline=False,
+    )
 
     await ctx.message.reply(embed=embed)
 

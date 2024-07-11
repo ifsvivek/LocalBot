@@ -28,7 +28,7 @@ def ollama_chat(prompt, model):
     return combined_response
 
 
-def generate_image(prompt, model_id=0, use_refiner=False, magic_prompt=False):
+def generate_image(prompt, model_id=0, use_refiner=False, magic_prompt=False, calc_metrics=False):
     output_dir = "img"
     os.makedirs(output_dir, exist_ok=True)
 
@@ -38,6 +38,7 @@ def generate_image(prompt, model_id=0, use_refiner=False, magic_prompt=False):
         "model_id": model_id,
         "use_refiner": use_refiner,
         "magic_prompt": magic_prompt,
+        "calc_metrics": calc_metrics,
     }
 
     response = requests.get(url, params=params)
@@ -273,7 +274,7 @@ async def lc(ctx):
         inline=False,
     )
     embed.add_field(
-        name="`/imagine [prompt]` or `$imagine [prompt]`",
+        name="`$imagine [prompt]`",
         value="Generates an image based on the provided prompt. `--magic`: Uses a magic prompt. `--model`: Specify the model to use for image generation. Range: [0, 1, 2, 3, 4].",
         inline=False,
     )

@@ -29,7 +29,7 @@ Once the bot is running and connected to your Discord server, users can interact
 | `/flip` or `$flip`                         | Flips a coin.                                                   |                                                                                                                      |
 | `/ask` or `$ask`                           | Provides a yes/no response randomly.                            |                                                                                                                      |
 | `/chat [message]` or `$chat [message]`     | Engages in a chat with the bot using the text-generation model. |                                                                                                                      |
-| `/imagine [prompt]` or `$imagine [prompt]` | Generates an image based on the provided prompt.                | `--magic`: Uses a magic prompt.<br>`--model`: Specify the model to use for image generation. Range: [0, 1, 2, 3, 4]. |
+| `$imagine [prompt]` | Generates an image based on the provided prompt.                | `--magic`: Uses a magic prompt.<br>`--model`: Specify the model to use for image generation. Range: [0, 1, 2, 3, 4]. |
 | `/purge [amount]` or `$purge [amount]`     | Deletes the specified number of messages in the channel.        | Requires the `Manage Messages` permission.                                                                           |
 | `$clear [amount]`     | Clears the specified number of messages in the DM.              |                                                                                                                      |
 
