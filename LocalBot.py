@@ -27,7 +27,9 @@ def ollama_chat(prompt, model):
     return combined_response
 
 
-def generate_image(prompt, model_id=0, use_refiner=False, magic_prompt=False, calc_metrics=False):
+def generate_image(
+    prompt, model_id=0, use_refiner=False, magic_prompt=False, calc_metrics=False
+):
     output_dir = "img"
     os.makedirs(output_dir, exist_ok=True)
 
@@ -178,7 +180,7 @@ async def imagine(ctx, *, args):
     flag_index = args.find(" --")
     if flag_index != -1:
         prompt = args[:flag_index]
-        args_list = args[flag_index + 1:].split()
+        args_list = args[flag_index + 1 :].split()
     else:
         prompt = args
         args_list = []
