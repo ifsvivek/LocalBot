@@ -1,9 +1,10 @@
-import discord, requests, json, random, asyncio, os, shlex, base64, argparse, time
+import discord, requests, json, random, asyncio, os, base64, argparse, time
 from dotenv import load_dotenv
 from discord.ext import commands
-from discord import File, Embed
+from discord import Embed
 from PIL import Image
 from io import BytesIO
+from concurrent.futures import ThreadPoolExecutor
 
 
 load_dotenv()
@@ -201,12 +202,17 @@ async def imagine(ctx, *, args):
         if not prompt:
             await ctx.message.reply("You must provide a prompt.")
             return
-        image_path = generate_image(
-            prompt=prompt,
-            model_id=parsed_args.model,
-            use_refiner=parsed_args.refiner,
-            magic_prompt=parsed_args.magic,
-        )
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as pool:
+            image_path = await loop.run_in_executor(
+                pool,
+                lambda: generate_image(
+                    prompt=prompt,
+                    model_id=parsed_args.model,
+                    use_refiner=parsed_args.refiner,
+                    magic_prompt=parsed_args.magic,
+                ),
+            )
         if image_path is None:
             await ctx.message.reply("Failed to generate an image. Please try again.")
             return
