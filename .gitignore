@@ -2,3 +2,4 @@ __pycache__
 tiny/model.safetensors
 .env
 img/
+*.out
