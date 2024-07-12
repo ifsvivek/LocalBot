@@ -88,16 +88,13 @@ async def cat(ctx):
 
 @bot.slash_command(description="Send a picture of a dog.")
 async def dog(ctx):
-    try:
-        response = requests.get("https://api.thedogapi.com/v1/images/search")
-        if response.status_code == 200:
-            data = response.json()
-            dog_image_link = data[0]["url"]
-            await ctx.respond(dog_image_link)
-        else:
-            await ctx.respond("Failed to fetch dog image. Try again later.")
-    except Exception as e:
-        await ctx.respond(f"An error occurred: {e}")
+    response = requests.get("https://api.thedogapi.com/v1/images/search")
+    if response.status_code == 200:
+        data = response.json()
+        dog_image_link = data[0]["url"]
+        await ctx.respond(dog_image_link)
+    else:
+        await ctx.respond("Failed to fetch dog image. Try again later.")
 
 
 @bot.slash_command(description="Game: Guess the number between 1 and 10.")
