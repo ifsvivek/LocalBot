@@ -3,3 +3,4 @@ tiny/model.safetensors
 .env
 img/
 *.out
+music/
