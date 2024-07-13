@@ -16,6 +16,8 @@ GENIUS_TOKEN = os.getenv("GENIUS_TOKEN")
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="$", intents=intents)
+
+
 OLLAMA_API_URL = "http://127.0.0.1:11434/api/generate"
 model_name = "llama3"
 music_dir = "music"
@@ -456,16 +458,20 @@ async def stop(ctx):
     await ctx.response.send_message("Playback stopped.")
 
 
-@bot.slash_command(description="Get lyrics for the current song.")
-async def lyrics(ctx):
+@bot.slash_command(description="Get lyrics for the current song or a specified song.")
+async def lyrics(ctx, *, song_name: str = None):
     state = get_server_state(ctx.guild.id)
     await ctx.response.defer()
-    if not state["current_song"]:
-        await ctx.followup.send("No song is currently playing.")
+    
+    # Use the provided song name or the title of the current playing song
+    search_title = song_name if song_name else state["current_song"]["title"] if state["current_song"] else None
+    
+    if not search_title:
+        await ctx.followup.send("No song is currently playing and no song name was provided.")
         return
 
     try:
-        song = genius.search_song(state["current_song"]["title"])
+        song = genius.search_song(search_title)
         if song:
             lyrics = song.lyrics
             # Discord has a character limit for messages (2000 characters), so split if necessary
@@ -476,7 +482,7 @@ async def lyrics(ctx):
                 await ctx.followup.send(lyrics)
         else:
             await ctx.followup.send(
-                f"Lyrics for '{state['current_song']['title']}' not found."
+                f"Lyrics for '{search_title}' not found."
             )
     except Exception as e:
         await ctx.followup.send(f"Error: {str(e)}")
