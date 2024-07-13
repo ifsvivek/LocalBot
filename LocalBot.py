@@ -1,19 +1,40 @@
-import discord, requests, json, random, asyncio, os, base64, argparse, time
+import discord, requests, json, random, asyncio, os, base64, argparse, time, lyricsgenius
 from dotenv import load_dotenv
 from discord.ext import commands
 from discord import Embed
 from PIL import Image
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
+import yt_dlp as youtube_dl
 
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
+GENIUS_TOKEN = os.getenv("GENIUS_TOKEN")
+
+
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="$", intents=intents)
 OLLAMA_API_URL = "http://127.0.0.1:11434/api/generate"
 model_name = "llama3"
+music_dir = "music"
+os.makedirs(music_dir, exist_ok=True)
+genius = lyricsgenius.Genius(GENIUS_TOKEN)
+
+
+ytdl_format_options = {
+    "format": "bestaudio/best",
+    "extractaudio": True,
+    "audioformat": "mp3",
+    "outtmpl": os.path.join(music_dir, "%(title)s.%(ext)s"),
+    "restrictfilenames": True,
+    "noplaylist": True,
+}
+
+ffmpeg_options = {
+    "options": "-vn",
+}
 
 
 def ollama_chat(prompt, model):
@@ -296,8 +317,153 @@ async def lc(ctx):
         value="Clears the specified number of messages in the DM.",
         inline=False,
     )
+    embed.add_field(
+        name="`$lc`",
+        value="Lists all the available commands and their descriptions.",
+        inline=False,
+    )
+    embed.add_field(
+        name="`/join` or `$join`",
+        value="Joins the voice channel of the user.",
+        inline=False,
+    )
+    embed.add_field(
+        name="`/leave` or `$leave`",
+        value="Leaves the voice channel.",
+        inline=False,
+    )
+    embed.add_field(
+        name="`/play [query]` or `$play [query]`",
+        value="Plays a song from YouTube in the voice channel.",
+        inline=False,
+    )
+    embed.add_field(
+        name="`/stop` or `$stop`",
+        value="Stops the current playback in the voice channel.",
+        inline=False,
+    )
+    embed.add_field(
+        name="`/lyrics` or `$lyrics`",
+        value="Fetches the lyrics for the current song playing in the voice channel.",
+        inline=False,
+    )
 
     await ctx.message.reply(embed=embed)
+
+
+@bot.slash_command(description="Join the voice channel.")
+async def join(ctx):
+    if ctx.author.voice:
+        channel = ctx.author.voice.channel
+        await channel.connect()
+        await ctx.response.send_message("Joined the voice channel.")
+    else:
+        await ctx.response.send_message(
+            "You are not in a voice channel!", ephemeral=True
+        )
+
+
+@bot.slash_command(description="Leave the voice channel.")
+async def leave(ctx):
+    if ctx.voice_client:
+        await ctx.voice_client.disconnect()
+        await ctx.response.send_message("Left the voice channel.")
+    else:
+        await ctx.response.send_message("I'm not in a voice channel!", ephemeral=True)
+
+
+@bot.slash_command(description="Play a song from YouTube.")
+async def play(ctx, *, query):
+    global current_song
+
+    if not ctx.voice_client:
+        await ctx.response.send_message(
+            "I'm not connected to a voice channel. Use /join first.", ephemeral=True
+        )
+        return
+
+    await ctx.response.defer()
+
+    ydl = youtube_dl.YoutubeDL(ytdl_format_options)
+
+    if "http" in query:
+        url = query
+    else:
+        url = f"ytsearch:{query}"
+
+    try:
+        info = ydl.extract_info(url, download=True)
+
+        # If it's a search query, extract the first result's URL
+        if "entries" in info:
+            info = info["entries"][0]
+
+        filename = ydl.prepare_filename(info)
+
+        # Look for formats that contain audio
+        audio_formats = [
+            f for f in info["formats"] if f.get("acodec") not in ("none", None)
+        ]
+
+        if audio_formats:
+            url = audio_formats[0]["url"]
+        else:
+            await ctx.followup.send(
+                "Error: No valid audio formats found for this video."
+            )
+            return
+
+    except Exception as e:
+        await ctx.followup.send(f"Error: {str(e)}")
+        return
+
+    ctx.voice_client.stop()
+    current_song = info["title"]
+
+    def after_playback(err):
+        global current_song
+        if os.path.exists(filename):
+            os.remove(filename)  # Delete the file after playback
+        if err:
+            print(f"Error: {err}")
+        current_song = None
+
+    ctx.voice_client.play(
+        discord.FFmpegPCMAudio(filename, **ffmpeg_options), after=after_playback
+    )
+
+    await ctx.followup.send(f'Now playing: {info["title"]}')
+
+
+@bot.slash_command(description="Stop the current playback.")
+async def stop(ctx):
+    global current_song
+    ctx.voice_client.stop()
+    current_song = None
+    await ctx.response.send_message("Playback stopped.")
+
+
+@bot.slash_command(description="Get lyrics for the current song.")
+async def lyrics(ctx):
+    global current_song
+    await ctx.response.defer()
+    if not current_song:
+        await ctx.followup.send("No song is currently playing.")
+        return
+
+    try:
+        song = genius.search_song(current_song)
+        if song:
+            lyrics = song.lyrics
+            if len(lyrics) > 2000:
+                for i in range(0, len(lyrics), 2000):
+                    await ctx.followup.send(lyrics[i : i + 2000])
+            else:
+                await ctx.followup.send(lyrics)
+        else:
+            await ctx.followup.send(f"Lyrics for '{current_song}' not found.")
+    except Exception as e:
+        await ctx.followup.send(f"Error: {str(e)}")
 
 
 bot.run(TOKEN)
