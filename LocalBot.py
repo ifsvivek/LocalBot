@@ -21,6 +21,9 @@ model_name = "llama3"
 music_dir = "music"
 os.makedirs(music_dir, exist_ok=True)
 genius = lyricsgenius.Genius(GENIUS_TOKEN)
+current_song = None
+playlist_queue = []
+server_state = {}
 
 
 ytdl_format_options = {
@@ -29,12 +32,18 @@ ytdl_format_options = {
     "audioformat": "mp3",
     "outtmpl": os.path.join(music_dir, "%(title)s.%(ext)s"),
     "restrictfilenames": True,
-    "noplaylist": True,
+    "noplaylist": False,
 }
 
 ffmpeg_options = {
     "options": "-vn",
 }
+
+
+def get_server_state(guild_id):
+    if guild_id not in server_state:
+        server_state[guild_id] = {"current_song": None, "playlist_queue": []}
+    return server_state[guild_id]
 
 
 def ollama_chat(prompt, model):
@@ -372,9 +381,34 @@ async def leave(ctx):
         await ctx.response.send_message("I'm not in a voice channel!", ephemeral=True)
 
 
-@bot.slash_command(description="Play a song from YouTube.")
+async def after_playback(err, ctx):
+    state = get_server_state(ctx.guild.id)
+
+    if os.path.exists(state["current_song"]["filename"]):
+        os.remove(state["current_song"]["filename"])  # Delete the file after playback
+    if err:
+        print(f"Error: {err}")
+
+    if state["playlist_queue"]:
+        next_song = state["playlist_queue"].pop(0)
+        await play_song(ctx, next_song["info"], next_song["filename"])
+    else:
+        state["current_song"] = None
+
+
+async def play_song(ctx, info, filename):
+    state = get_server_state(ctx.guild.id)
+    state["current_song"] = {"title": info["title"], "filename": filename}
+    ctx.voice_client.play(
+        discord.FFmpegPCMAudio(filename, **ffmpeg_options),
+        after=lambda e: bot.loop.create_task(after_playback(e, ctx)),
+    )
+    await ctx.followup.send(f'Now playing: {info["title"]}')
+
+
+@bot.slash_command(description="Play a song or playlist from YouTube.")
 async def play(ctx, *, query):
-    global current_song
+    state = get_server_state(ctx.guild.id)
 
     if not ctx.voice_client:
         await ctx.response.send_message(
@@ -394,74 +428,56 @@ async def play(ctx, *, query):
     try:
         info = ydl.extract_info(url, download=True)
 
-        # If it's a search query, extract the first result's URL
+        # If it's a playlist, queue all entries
         if "entries" in info:
-            info = info["entries"][0]
+            for entry in info["entries"]:
+                filename = ydl.prepare_filename(entry)
+                state["playlist_queue"].append({"info": entry, "filename": filename})
 
-        filename = ydl.prepare_filename(info)
-
-        # Look for formats that contain audio
-        audio_formats = [
-            f for f in info["formats"] if f.get("acodec") not in ("none", None)
-        ]
-
-        if audio_formats:
-            url = audio_formats[0]["url"]
         else:
-            await ctx.followup.send(
-                "Error: No valid audio formats found for this video."
-            )
-            return
+            filename = ydl.prepare_filename(info)
+            state["playlist_queue"].append({"info": info, "filename": filename})
 
     except Exception as e:
         await ctx.followup.send(f"Error: {str(e)}")
         return
 
-    ctx.voice_client.stop()
-    current_song = info["title"]
-
-    def after_playback(err):
-        global current_song
-        if os.path.exists(filename):
-            os.remove(filename)  # Delete the file after playback
-        if err:
-            print(f"Error: {err}")
-        current_song = None
-
-    ctx.voice_client.play(
-        discord.FFmpegPCMAudio(filename, **ffmpeg_options), after=after_playback
-    )
-
-    await ctx.followup.send(f'Now playing: {info["title"]}')
+    if not state["current_song"]:
+        next_song = state["playlist_queue"].pop(0)
+        await play_song(ctx, next_song["info"], next_song["filename"])
 
 
 @bot.slash_command(description="Stop the current playback.")
 async def stop(ctx):
-    global current_song
+    state = get_server_state(ctx.guild.id)
     ctx.voice_client.stop()
-    current_song = None
+    state["current_song"] = None
+    state["playlist_queue"] = []
     await ctx.response.send_message("Playback stopped.")
 
 
 @bot.slash_command(description="Get lyrics for the current song.")
 async def lyrics(ctx):
-    global current_song
+    state = get_server_state(ctx.guild.id)
     await ctx.response.defer()
-    if not current_song:
+    if not state["current_song"]:
         await ctx.followup.send("No song is currently playing.")
         return
 
     try:
-        song = genius.search_song(current_song)
+        song = genius.search_song(state["current_song"]["title"])
         if song:
             lyrics = song.lyrics
+            # Discord has a character limit for messages (2000 characters), so split if necessary
             if len(lyrics) > 2000:
                 for i in range(0, len(lyrics), 2000):
                     await ctx.followup.send(lyrics[i : i + 2000])
             else:
                 await ctx.followup.send(lyrics)
         else:
-            await ctx.followup.send(f"Lyrics for '{current_song}' not found.")
+            await ctx.followup.send(
+                f"Lyrics for '{state['current_song']['title']}' not found."
+            )
     except Exception as e:
         await ctx.followup.send(f"Error: {str(e)}")
 
