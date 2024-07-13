@@ -1,5 +1,3 @@
-# Local Bot
-
 ## Description
 This Discord bot is a fun and interactive bot that provides various commands to users within a Discord server. It includes features such as ping testing, cat and dog images, dice rolling, number guessing game, coin flipping, chatting with the bot, and generating images based on prompts.
 
