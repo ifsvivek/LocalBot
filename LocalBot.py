@@ -462,12 +462,18 @@ async def stop(ctx):
 async def lyrics(ctx, *, song_name: str = None):
     state = get_server_state(ctx.guild.id)
     await ctx.response.defer()
-    
+
     # Use the provided song name or the title of the current playing song
-    search_title = song_name if song_name else state["current_song"]["title"] if state["current_song"] else None
-    
+    search_title = (
+        song_name
+        if song_name
+        else state["current_song"]["title"] if state["current_song"] else None
+    )
+
     if not search_title:
-        await ctx.followup.send("No song is currently playing and no song name was provided.")
+        await ctx.followup.send(
+            "No song is currently playing and no song name was provided."
+        )
         return
 
     try:
@@ -481,9 +487,7 @@ async def lyrics(ctx, *, song_name: str = None):
             else:
                 await ctx.followup.send(lyrics)
         else:
-            await ctx.followup.send(
-                f"Lyrics for '{search_title}' not found."
-            )
+            await ctx.followup.send(f"Lyrics for '{search_title}' not found.")
     except Exception as e:
         await ctx.followup.send(f"Error: {str(e)}")
 
