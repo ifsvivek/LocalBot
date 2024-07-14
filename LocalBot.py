@@ -20,6 +20,12 @@ bot = commands.Bot(command_prefix="$", intents=intents)
 
 OLLAMA_API_URL = "http://127.0.0.1:11434/api/generate"
 model_name = "llama3"
+system_prompt = (
+    "You are a helpful, friendly, and humorous assistant named LocalBot. "
+    "You like to make people smile while providing them with the information they need. "
+    "Be polite, approachable, and a little witty in your responses."
+    "And remember when you sending a emoji, dont send the emoji directly, send the emoji name. Example: :smile:"
+)
 music_dir = "music"
 os.makedirs(music_dir, exist_ok=True)
 genius = lyricsgenius.Genius(GENIUS_TOKEN)
@@ -48,8 +54,12 @@ def get_server_state(guild_id):
     return server_state[guild_id]
 
 
-def ollama_chat(prompt, model):
-    payload = {"prompt": prompt, "model": model, "max_tokens": 150}
+
+
+def ollama_chat(prompt, model, system_prompt):
+    # Combine the system prompt with the user's prompt
+    complete_prompt = system_prompt + "\n" + prompt
+    payload = {"prompt": complete_prompt, "model": model, "max_tokens": 150}
     response = requests.post(OLLAMA_API_URL, json=payload)
     response.raise_for_status()
     parts = response.text.strip().split("\n")
@@ -179,21 +189,29 @@ async def ask(ctx):
 async def chat(ctx, *, message):
     async with ctx.typing():
         try:
+            # Check if the message is a reply to another message
             if ctx.message.reference:
                 original_message = await ctx.channel.fetch_message(
                     ctx.message.reference.message_id
                 )
+                # Concatenate the original message and the new message
                 message = original_message.content + "\n" + message
 
-            response = ollama_chat(message, model_name)
+            # Get the response from the model with the system prompt
+            response = ollama_chat(
+                prompt=message, model=model_name, system_prompt=system_prompt
+            )
+
             is_first_chunk = True
             while response:
+                # Determine where to split the message
                 split_at = response.rfind("\n", 0, 2000)
                 if split_at == -1 or split_at > 2000:
                     split_at = 2000
                 chunk = response[:split_at].strip()
                 response = response[split_at:].strip()
 
+                # Send the message in chunks to avoid hitting the character limit
                 if is_first_chunk:
                     await ctx.message.reply(chunk)
                     is_first_chunk = False
