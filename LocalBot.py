@@ -54,8 +54,6 @@ def get_server_state(guild_id):
     return server_state[guild_id]
 
 
-
-
 def ollama_chat(prompt, model, system_prompt):
     # Combine the system prompt with the user's prompt
     complete_prompt = system_prompt + "\n" + prompt
@@ -431,12 +429,7 @@ async def play(ctx, *, query):
     state = get_server_state(ctx.guild.id)
 
     if not ctx.voice_client:
-        await ctx.response.send_message(
-            "I'm not connected to a voice channel. Use /join first.", ephemeral=True
-        )
-        return
-
-    await ctx.response.defer()
+        await join(ctx)
 
     ydl = youtube_dl.YoutubeDL(ytdl_format_options)
 
@@ -453,7 +446,6 @@ async def play(ctx, *, query):
             for entry in info["entries"]:
                 filename = ydl.prepare_filename(entry)
                 state["playlist_queue"].append({"info": entry, "filename": filename})
-
         else:
             filename = ydl.prepare_filename(info)
             state["playlist_queue"].append({"info": info, "filename": filename})
