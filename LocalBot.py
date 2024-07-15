@@ -1,11 +1,13 @@
-import discord, requests, json, random, asyncio, os, base64, argparse, time, lyricsgenius
+import discord, json, random, asyncio, os, base64, argparse, time, lyricsgenius
 from dotenv import load_dotenv
 from discord.ext import commands
 from discord import Embed
+import aiohttp
 from PIL import Image
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
-import yt_dlp as youtube_dl
+import yt_dlp as youtube_dl # Be careful with this sync
+from typing import Dict, List, Union # It's good to add type annotations
 
 
 load_dotenv()
@@ -74,50 +76,88 @@ ffmpeg_options = {
 }
 
 
-def get_server_state(guild_id):
+async def get_server_state(guild_id):
     if guild_id not in server_state:
         server_state[guild_id] = {"current_song": None, "playlist_queue": []}
     return server_state[guild_id]
 
 
-def generate_text(server_id, channel_id, user_id, prompt, user_name):
+async def generate_text(server_id: str, channel_id: str, user_id: str, prompt: str, user_name: str) -> Union[str, None]:
+    """
+    Generate a response text based on the given prompt and conversation history.
+
+    Args:
+        server_id (str): The ID of the server.
+        channel_id (str): The ID of the channel.
+        user_id (str): The ID of the user.
+        prompt (str): The user's prompt.
+        user_name (str): The name of the user.
+
+    Returns:
+        str: The response from the bot.
+        None: In case of an error.
+    """
     global conversation_history
+
+    # Initialize the conversation history if it doesn't exist
     if server_id not in conversation_history:
         conversation_history[server_id] = {}
     if channel_id not in conversation_history[server_id]:
         conversation_history[server_id][channel_id] = {}
     if user_id not in conversation_history[server_id][channel_id]:
         conversation_history[server_id][channel_id][user_id] = []
-    conversation_history[server_id][channel_id][user_id].append(
-        f"{user_name}: {prompt}"
-    )
-    if system_prompt:
-        conversation_history[server_id][channel_id][user_id].append(
-            f"System: {system_prompt}"
-        )
 
+    # Append the user's prompt to the conversation history
+    conversation_history[server_id][channel_id][user_id].append(f"{user_name}: {prompt}")
+
+    # Optionally append the system prompt to the conversation history
+    if system_prompt:
+        conversation_history[server_id][channel_id][user_id].append(f"System: {system_prompt}")
+
+    # Join the conversation history into a single context string
     context = "\n".join(conversation_history[server_id][channel_id][user_id])
+
+    # Define the URL and headers for the API request
     url = f"{SERVER_URL}/ollama/api/generate"
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+
+    # Define the data payload for the API request
     data = {
         "model": MODEL_NAME,
         "prompt": f"<context>{context}</context>\n\nBot:",
         "stream": False,
     }
-    response = requests.post(url, headers=headers, json=data)
-    if response.status_code == 200:
-        result = response.json()
-        conversation_history[server_id][channel_id][user_id].append(
-            f"Bot: {result['response']}"
-        )
-        return result["response"]
-    else:
-        return f"Error: Request failed with status code {response.status_code}"
+
+    # Make the asynchronous API request
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=data) as response:
+            # Check if the request was successful
+            if response.status == 200:
+                result = await response.json()
+                # Append the bot's response to the conversation history
+                conversation_history[server_id][channel_id][user_id].append(f"Bot: {result['response']}")
+                return result["response"]
+            else:
+                return f"Error: Request failed with status code {response.status}"
 
 
-def generate_image(
-    prompt, model_id=0, use_refiner=False, magic_prompt=False, calc_metrics=False
-):
+
+async def generate_image(
+    prompt: str, model_id: int = 0, use_refiner: bool = False, magic_prompt: bool = False, calc_metrics: bool = False
+) -> Optional[str]:
+    """
+    Generate an image based on the given prompt using an asynchronous API request.
+
+    Args:
+        prompt (str): The prompt for the image generation.
+        model_id (int, optional): The model ID to use. Defaults to 0.
+        use_refiner (bool, optional): Whether to use the refiner. Defaults to False.
+        magic_prompt (bool, optional): Whether to use the magic prompt. Defaults to False.
+        calc_metrics (bool, optional): Whether to calculate metrics. Defaults to False.
+
+    Returns:
+        Optional[str]: The path to the saved image, or None if the request failed.
+    """
     output_dir = "img"
     os.makedirs(output_dir, exist_ok=True)
 
@@ -130,20 +170,20 @@ def generate_image(
         "calc_metrics": calc_metrics,
     }
 
-    response = requests.get(url, params=params)
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, params=params) as response:
+            if response.status == 200:
+                data = await response.json()
+                base64_image_string = data["image"]
+                image_data = base64.b64decode(base64_image_string)
+                image = Image.open(BytesIO(image_data))
+                timestamp = int(time.time())
+                image_path = os.path.join(output_dir, f"img_{timestamp}.png")
+                image.save(image_path)
 
-    if response.status_code == 200:
-        data = response.json()
-        base64_image_string = data["image"]
-        image_data = base64.b64decode(base64_image_string)
-        image = Image.open(BytesIO(image_data))
-        timestamp = int(time.time())
-        image_path = os.path.join(output_dir, f"img_{timestamp}.png")
-        image.save(image_path)
-
-        return image_path
-    return None
-
+                return image_path
+            else:
+                return None
 
 @bot.event
 async def on_ready():
@@ -162,27 +202,31 @@ async def on_message(message):
         await bot.process_commands(message)
 
 
+
 @bot.slash_command(description="Send a picture of a cat.")
 async def cat(ctx):
-    response = requests.get("https://api.thecatapi.com/v1/images/search")
-    if response.status_code == 200:
-        data = response.json()
-        cat_image_link = data[0]["url"]
-        await ctx.respond(cat_image_link)
-    else:
-        await ctx.respond("Failed to fetch cat image. Try again later.")
+    async with aiohttp.ClientSession() as session:
+        async with session.get("https://api.thecatapi.com/v1/images/search") as response:
+            if response.status == 200:
+                data = await response.json()
+                cat_image_link = data[0]["url"]
+                await ctx.respond(cat_image_link)
+            else:
+                await ctx.respond("Failed to fetch cat image. Try again later.", ephemeral=True)
+
 
 
 @bot.slash_command(description="Send a picture of a dog.")
 async def dog(ctx):
-    response = requests.get("https://api.thedogapi.com/v1/images/search")
-    if response.status_code == 200:
-        data = response.json()
-        dog_image_link = data[0]["url"]
-        await ctx.respond(dog_image_link)
-    else:
-        await ctx.respond("Failed to fetch dog image. Try again later.")
-
+    async with aiohttp.ClientSession() as session:
+        async with session.get("https://api.thedogapi.com/v1/images/search") as response:
+            if response.status == 200:
+                data = await response.json()
+                dog_image_link = data[0]["url"]
+                await ctx.respond(dog_image_link)
+            else:
+                await ctx.respond("Failed to fetch dog image. Try again later.", ephemeral=True)
+    
 
 @bot.slash_command(description="Game: Guess the number between 1 and 10.")
 async def gtn(ctx):
@@ -240,7 +284,7 @@ async def chat(ctx, *, message):
             user_name = ctx.author.name
             prompt = message
 
-            response = generate_text(server_id, channel_id, user_id, prompt, user_name)
+            response = await generate_text(server_id, channel_id, user_id, prompt, user_name)
 
             is_first_chunk = True
             while response:
@@ -263,6 +307,7 @@ async def chat(ctx, *, message):
 
 @bot.command(description="Generate an image based on a prompt.")
 async def imagine(ctx, *, args):
+    await ctx.defer()
     start_time = time.time()
 
     flag_index = args.find(" --")
@@ -293,7 +338,7 @@ async def imagine(ctx, *, args):
         with ThreadPoolExecutor() as pool:
             image_path = await loop.run_in_executor(
                 pool,
-                lambda: generate_image(
+                lambda: await generate_image(
                     prompt=prompt,
                     model_id=parsed_args.model,
                     use_refiner=parsed_args.refiner,
@@ -442,7 +487,7 @@ async def leave(ctx):
 
 
 async def after_playback(err, ctx):
-    state = get_server_state(ctx.guild.id)
+    state = await get_server_state(ctx.guild.id)
 
     if os.path.exists(state["current_song"]["filename"]):
         os.remove(state["current_song"]["filename"])  # Delete the file after playback
