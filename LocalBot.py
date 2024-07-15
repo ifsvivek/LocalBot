@@ -11,6 +11,9 @@ import yt_dlp as youtube_dl
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 GENIUS_TOKEN = os.getenv("GENIUS_TOKEN")
+API_KEY = os.getenv("API_KEY")
+SERVER_URL = os.getenv("SERVER_URL")
+MODEL_NAME = os.getenv("MODEL")
 
 
 intents = discord.Intents.default()
@@ -18,20 +21,13 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="$", intents=intents)
 
 
-OLLAMA_API_URL = "http://127.0.0.1:11434/api/generate"
-model_name = "llama3"
-system_prompt = (
-    "You are a helpful, friendly, and humorous assistant named LocalBot. "
-    "You like to make people smile while providing them with the information they need. "
-    "Be polite, approachable, and a little witty in your responses."
-    "And remember when you sending a emoji, dont send the emoji directly, send the emoji name. Example: :smile:"
-)
 music_dir = "music"
 os.makedirs(music_dir, exist_ok=True)
 genius = lyricsgenius.Genius(GENIUS_TOKEN)
 current_song = None
 playlist_queue = []
 server_state = {}
+conversation_history = {}
 
 
 ytdl_format_options = {
@@ -54,18 +50,35 @@ def get_server_state(guild_id):
     return server_state[guild_id]
 
 
-def ollama_chat(prompt, model, system_prompt):
-    # Combine the system prompt with the user's prompt
-    complete_prompt = system_prompt + "\n" + prompt
-    payload = {"prompt": complete_prompt, "model": model, "max_tokens": 150}
-    response = requests.post(OLLAMA_API_URL, json=payload)
-    response.raise_for_status()
-    parts = response.text.strip().split("\n")
-    combined_response = ""
-    for part in parts:
-        json_part = json.loads(part)
-        combined_response += json_part.get("response", "")
-    return combined_response
+def generate_text(server_id, channel_id, user_id, prompt, user_name):
+    global conversation_history
+    if server_id not in conversation_history:
+        conversation_history[server_id] = {}
+    if channel_id not in conversation_history[server_id]:
+        conversation_history[server_id][channel_id] = {}
+    if user_id not in conversation_history[server_id][channel_id]:
+        conversation_history[server_id][channel_id][user_id] = []
+    conversation_history[server_id][channel_id][user_id].append(
+        f"{user_name}: {prompt}"
+    )
+
+    context = "\n".join(conversation_history[server_id][channel_id][user_id])
+    url = f"{SERVER_URL}/ollama/api/generate"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+    data = {
+        "model": MODEL_NAME,
+        "prompt": f"<context>{context}</context>\n\nBot:",
+        "stream": False,
+    }
+    response = requests.post(url, headers=headers, json=data)
+    if response.status_code == 200:
+        result = response.json()
+        conversation_history[server_id][channel_id][user_id].append(
+            f"Bot: {result['response']}"
+        )
+        return result["response"]
+    else:
+        return f"Error: Request failed with status code {response.status_code}"
 
 
 def generate_image(
@@ -187,18 +200,13 @@ async def ask(ctx):
 async def chat(ctx, *, message):
     async with ctx.typing():
         try:
-            # Check if the message is a reply to another message
-            if ctx.message.reference:
-                original_message = await ctx.channel.fetch_message(
-                    ctx.message.reference.message_id
-                )
-                # Concatenate the original message and the new message
-                message = original_message.content + "\n" + message
+            server_id = str(ctx.guild.id)
+            channel_id = str(ctx.channel.id)
+            user_id = str(ctx.author.id)
+            user_name = ctx.author.name
+            prompt = message
 
-            # Get the response from the model with the system prompt
-            response = ollama_chat(
-                prompt=message, model=model_name, system_prompt=system_prompt
-            )
+            response = generate_text(server_id, channel_id, user_id, prompt, user_name)
 
             is_first_chunk = True
             while response:
