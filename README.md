@@ -8,9 +8,14 @@ This Discord bot is a fun and interactive bot that provides various commands to 
 4. Inside the `.env` file, add your Discord bot token in the following format:
     ```
     TOKEN=your_discord_bot_token_here
+    GENIUS_TOKEN=your_genius_token_here
+    API_KEY=your_openwebui_token_here
+    SERVER_URL=your_openwebui_server_url_here
+    MODEL=model_name_here
     ```
 5. Ensure your bot has the necessary permissions in your Discord server.
 6. Run the bot script by executing `python LocalBot.py` or `python LocalBot_phone.py` in your terminal, depending on your use case.
+7. or use `nohup python3 LocalBot.py &` to run the bot in the background.
 
 ## Usage
 Once the bot is running and connected to your Discord server, users can interact with it using various commands prefixed with `$`. The bot supports both traditional commands and slash commands for enhanced interaction within Discord.
