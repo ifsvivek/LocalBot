@@ -1,4 +1,4 @@
-import discord, json, random, asyncio, os, base64, argparse, time, lyricsgenius
+import discord, json, random, asyncio, os, base64, argparse, time, lyricsgenius, functools
 from dotenv import load_dotenv
 from discord.ext import commands
 from discord import Embed
@@ -6,8 +6,8 @@ import aiohttp
 from PIL import Image
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
-import yt_dlp as youtube_dl # Be careful with this sync
-from typing import Dict, List, Union # It's good to add type annotations
+import yt_dlp as youtube_dl
+from typing import Union, Optional
 
 
 load_dotenv()
@@ -82,7 +82,9 @@ async def get_server_state(guild_id):
     return server_state[guild_id]
 
 
-async def generate_text(server_id: str, channel_id: str, user_id: str, prompt: str, user_name: str) -> Union[str, None]:
+async def generate_text(
+    server_id: str, channel_id: str, user_id: str, prompt: str, user_name: str
+) -> Union[str, None]:
     """
     Generate a response text based on the given prompt and conversation history.
 
@@ -108,11 +110,15 @@ async def generate_text(server_id: str, channel_id: str, user_id: str, prompt: s
         conversation_history[server_id][channel_id][user_id] = []
 
     # Append the user's prompt to the conversation history
-    conversation_history[server_id][channel_id][user_id].append(f"{user_name}: {prompt}")
+    conversation_history[server_id][channel_id][user_id].append(
+        f"{user_name}: {prompt}"
+    )
 
     # Optionally append the system prompt to the conversation history
     if system_prompt:
-        conversation_history[server_id][channel_id][user_id].append(f"System: {system_prompt}")
+        conversation_history[server_id][channel_id][user_id].append(
+            f"System: {system_prompt}"
+        )
 
     # Join the conversation history into a single context string
     context = "\n".join(conversation_history[server_id][channel_id][user_id])
@@ -135,15 +141,20 @@ async def generate_text(server_id: str, channel_id: str, user_id: str, prompt: s
             if response.status == 200:
                 result = await response.json()
                 # Append the bot's response to the conversation history
-                conversation_history[server_id][channel_id][user_id].append(f"Bot: {result['response']}")
+                conversation_history[server_id][channel_id][user_id].append(
+                    f"Bot: {result['response']}"
+                )
                 return result["response"]
             else:
                 return f"Error: Request failed with status code {response.status}"
 
 
-
 async def generate_image(
-    prompt: str, model_id: int = 0, use_refiner: bool = False, magic_prompt: bool = False, calc_metrics: bool = False
+    prompt: str,
+    model_id: int = 0,
+    use_refiner: bool = False,
+    magic_prompt: bool = False,
+    calc_metrics: bool = False,
 ) -> Optional[str]:
     """
     Generate an image based on the given prompt using an asynchronous API request.
@@ -165,9 +176,9 @@ async def generate_image(
     params = {
         "prompt": prompt,
         "model_id": model_id,
-        "use_refiner": use_refiner,
-        "magic_prompt": magic_prompt,
-        "calc_metrics": calc_metrics,
+        "use_refiner": int(use_refiner),
+        "magic_prompt": int(magic_prompt),
+        "calc_metrics": int(calc_metrics),
     }
 
     async with aiohttp.ClientSession() as session:
@@ -184,6 +195,7 @@ async def generate_image(
                 return image_path
             else:
                 return None
+
 
 @bot.event
 async def on_ready():
@@ -202,31 +214,37 @@ async def on_message(message):
         await bot.process_commands(message)
 
 
-
 @bot.slash_command(description="Send a picture of a cat.")
 async def cat(ctx):
     async with aiohttp.ClientSession() as session:
-        async with session.get("https://api.thecatapi.com/v1/images/search") as response:
+        async with session.get(
+            "https://api.thecatapi.com/v1/images/search"
+        ) as response:
             if response.status == 200:
                 data = await response.json()
                 cat_image_link = data[0]["url"]
                 await ctx.respond(cat_image_link)
             else:
-                await ctx.respond("Failed to fetch cat image. Try again later.", ephemeral=True)
-
+                await ctx.respond(
+                    "Failed to fetch cat image. Try again later.", ephemeral=True
+                )
 
 
 @bot.slash_command(description="Send a picture of a dog.")
 async def dog(ctx):
     async with aiohttp.ClientSession() as session:
-        async with session.get("https://api.thedogapi.com/v1/images/search") as response:
+        async with session.get(
+            "https://api.thedogapi.com/v1/images/search"
+        ) as response:
             if response.status == 200:
                 data = await response.json()
                 dog_image_link = data[0]["url"]
                 await ctx.respond(dog_image_link)
             else:
-                await ctx.respond("Failed to fetch dog image. Try again later.", ephemeral=True)
-    
+                await ctx.respond(
+                    "Failed to fetch dog image. Try again later.", ephemeral=True
+                )
+
 
 @bot.slash_command(description="Game: Guess the number between 1 and 10.")
 async def gtn(ctx):
@@ -284,7 +302,9 @@ async def chat(ctx, *, message):
             user_name = ctx.author.name
             prompt = message
 
-            response = await generate_text(server_id, channel_id, user_id, prompt, user_name)
+            response = await generate_text(
+                server_id, channel_id, user_id, prompt, user_name
+            )
 
             is_first_chunk = True
             while response:
@@ -307,7 +327,6 @@ async def chat(ctx, *, message):
 
 @bot.command(description="Generate an image based on a prompt.")
 async def imagine(ctx, *, args):
-    await ctx.defer()
     start_time = time.time()
 
     flag_index = args.find(" --")
@@ -334,20 +353,18 @@ async def imagine(ctx, *, args):
         if not prompt:
             await ctx.message.reply("You must provide a prompt.")
             return
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor() as pool:
-            image_path = await loop.run_in_executor(
-                pool,
-                lambda: await generate_image(
-                    prompt=prompt,
-                    model_id=parsed_args.model,
-                    use_refiner=parsed_args.refiner,
-                    magic_prompt=parsed_args.magic,
-                ),
-            )
+
+        image_path = await generate_image(
+            prompt=prompt,
+            model_id=parsed_args.model,
+            use_refiner=parsed_args.refiner,
+            magic_prompt=parsed_args.magic,
+        )
+
         if image_path is None:
             await ctx.message.reply("Failed to generate an image. Please try again.")
             return
+
         end_time = time.time()
         time_taken = end_time - start_time
         embed_title = prompt[:253] + "..." if len(prompt) > 256 else prompt
@@ -502,7 +519,7 @@ async def after_playback(err, ctx):
 
 
 async def play_song(ctx, info, filename):
-    state = get_server_state(ctx.guild.id)
+    state = await get_server_state(ctx.guild.id)
     state["current_song"] = {"title": info["title"], "filename": filename}
     ctx.voice_client.play(
         discord.FFmpegPCMAudio(filename, **ffmpeg_options),
@@ -513,7 +530,7 @@ async def play_song(ctx, info, filename):
 
 @bot.slash_command(description="Play a song or playlist from YouTube.")
 async def play(ctx, *, query):
-    state = get_server_state(ctx.guild.id)
+    state = await get_server_state(ctx.guild.id)
 
     if not ctx.voice_client:
         await join(ctx)
@@ -548,7 +565,7 @@ async def play(ctx, *, query):
 
 @bot.slash_command(description="Stop the current playback.")
 async def stop(ctx):
-    state = get_server_state(ctx.guild.id)
+    state = await get_server_state(ctx.guild.id)
     ctx.voice_client.stop()
     state["current_song"] = None
     state["playlist_queue"] = []
@@ -557,7 +574,7 @@ async def stop(ctx):
 
 @bot.slash_command(description="Get lyrics for the current song or a specified song.")
 async def lyrics(ctx, *, song_name: str = None):
-    state = get_server_state(ctx.guild.id)
+    state = await get_server_state(ctx.guild.id)
     await ctx.response.defer()
 
     # Use the provided song name or the title of the current playing song
