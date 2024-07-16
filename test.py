@@ -141,9 +141,9 @@ async def generate_image(prompt, model_id=0, use_refiner=False, magic_prompt=Fal
     params = {
         "prompt": prompt,
         "model_id": model_id,
-        "use_refiner": use_refiner,
-        "magic_prompt": magic_prompt,
-        "calc_metrics": calc_metrics,
+        "use_refiner": "true" if use_refiner else "false",  # Convert boolean to string
+        "magic_prompt": "true" if magic_prompt else "false",  # Convert boolean to string
+        "calc_metrics": "true" if calc_metrics else "false"  # Convert boolean to string
     }
 
     async with aiohttp.ClientSession() as session:
@@ -160,6 +160,7 @@ async def generate_image(prompt, model_id=0, use_refiner=False, magic_prompt=Fal
                 return image_path
             else:
                 return None
+
 
 @bot.event
 async def on_ready():
