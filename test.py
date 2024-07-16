@@ -133,22 +133,7 @@ async def generate_text(server_id: str, channel_id: str, user_id: str, prompt: s
             else:
                 return f"Error: Request failed with status code {response.status}"
 
-async def generate_image(
-    prompt: str, model_id: int = 0, use_refiner: bool = False, magic_prompt: bool = False, calc_metrics: bool = False
-) -> Optional[str]:
-    """
-    Generate an image based on the given prompt using an asynchronous API request.
-
-    Args:
-        prompt (str): The prompt for the image generation.
-        model_id (int, optional): The model ID to use. Defaults to 0.
-        use_refiner (bool, optional): Whether to use the refiner. Defaults to False.
-        magic_prompt (bool, optional): Whether to use the magic prompt. Defaults to False.
-        calc_metrics (bool, optional): Whether to calculate metrics. Defaults to False.
-
-    Returns:
-        Optional[str]: The path to the saved image, or None if the request failed.
-    """
+async def generate_image(prompt, model_id=0, use_refiner=False, magic_prompt=False, calc_metrics=False):
     output_dir = "img"
     os.makedirs(output_dir, exist_ok=True)
 
@@ -156,9 +141,9 @@ async def generate_image(
     params = {
         "prompt": prompt,
         "model_id": model_id,
-        "use_refiner": int(use_refiner),  # Convert boolean to int
-        "magic_prompt": int(magic_prompt),  # Convert boolean to int
-        "calc_metrics": int(calc_metrics),  # Convert boolean to int
+        "use_refiner": use_refiner,
+        "magic_prompt": magic_prompt,
+        "calc_metrics": calc_metrics,
     }
 
     async with aiohttp.ClientSession() as session:
@@ -264,26 +249,51 @@ async def chat(ctx, *, message: str):
     else:
         await ctx.respond("Sorry, something went wrong while generating a response.")
 
-@bot.command(name="imagine")
-async def imagine(ctx: ApplicationContext, prompt: Option(str, "Enter your prompt")):
+@bot.command(description="Generate an image based on a prompt.")
+async def imagine(ctx, *, args):
+    start_time = time.time()
+
+    args_list = shlex.split(args)
+    prompt_parts = []
+    while args_list and not args_list[0].startswith("--"):
+        prompt_parts.append(args_list.pop(0))
+    prompt = " ".join(prompt_parts)
+    parser = argparse.ArgumentParser(
+        description="Generate an image based on a prompt.", add_help=False
+    )
+    parser.add_argument("--model", type=int, default=5, help="The model ID to use.")
+    parser.add_argument(
+        "--refiner", action="store_true", help="Whether to use the refiner."
+    )
+    parser.add_argument(
+        "--magic", action="store_true", help="Whether to use magic prompt."
+    )
+
     try:
-        response = await generate_image(prompt)
-        if response:
-            await ctx.respond(file=discord.File(response))
-        else:
-            await ctx.respond("Failed to generate image. Please try again.")
-    except discord.errors.NotFound as e:
-        print(f"Interaction not found: {e}")
-        try:
-            await ctx.respond(f"An error occurred: {e}")
-        except discord.errors.NotFound:
-            print("Interaction already responded to.")
+        parsed_args = parser.parse_known_args(args_list)[0]
+        if not prompt:
+            await ctx.message.reply("You must provide a prompt.")
+            return
+        image_path = generate_image(
+            prompt=prompt,
+            model_id=parsed_args.model,
+            use_refiner=parsed_args.refiner,
+            magic_prompt=parsed_args.magic,
+        )
+        if image_path is None:
+            await ctx.message.reply("Failed to generate an image. Please try again.")
+            return
+        end_time = time.time()
+        time_taken = end_time - start_time
+        embed_title = prompt[:253] + "..." if len(prompt) > 256 else prompt
+        embed = discord.Embed(title=embed_title, color=0x00FF00)
+        embed.set_image(url=f"attachment://{os.path.basename(image_path)}")
+        embed.set_footer(text=f"{time_taken:.2f}s")
+        await ctx.message.reply(embed=embed, file=discord.File(image_path))
+        if os.path.exists(image_path):
+            os.remove(image_path)
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        try:
-            await ctx.respond(f"An unexpected error occurred: {e}")
-        except discord.errors.NotFound:
-            print("Interaction already responded to.")
+        print(e)
 
 @bot.slash_command(description="Clear messages in the current channel.")
 async def purge(ctx, amount: int):
