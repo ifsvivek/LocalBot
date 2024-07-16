@@ -274,7 +274,8 @@ async def imagine(ctx, *, args):
         if not prompt:
             await ctx.message.reply("You must provide a prompt.")
             return
-        image_path = generate_image(
+        # Await the generate_image function
+        image_path = await generate_image(
             prompt=prompt,
             model_id=parsed_args.model,
             use_refiner=parsed_args.refiner,
@@ -294,6 +295,7 @@ async def imagine(ctx, *, args):
             os.remove(image_path)
     except Exception as e:
         print(e)
+
 
 @bot.slash_command(description="Clear messages in the current channel.")
 async def purge(ctx, amount: int):
