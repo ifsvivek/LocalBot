@@ -264,16 +264,26 @@ async def chat(ctx, *, message: str):
     else:
         await ctx.respond("Sorry, something went wrong while generating a response.")
 
-@bot.slash_command(description="Generate an image based on a given prompt.")
-async def imagine(ctx, *, prompt: str, magic: bool = False, model: int = 0):
+@bot.command(name="imagine")
+async def imagine(ctx: ApplicationContext, prompt: Option(str, "Enter your prompt")):
     try:
-        response = await generate_image(prompt, model_id=model, magic_prompt=magic)
+        response = await generate_image(prompt)
         if response:
             await ctx.respond(file=discord.File(response))
         else:
-            await ctx.respond("Sorry, something went wrong while generating the image.")
+            await ctx.respond("Failed to generate image. Please try again.")
+    except discord.errors.NotFound as e:
+        print(f"Interaction not found: {e}")
+        try:
+            await ctx.respond(f"An error occurred: {e}")
+        except discord.errors.NotFound:
+            print("Interaction already responded to.")
     except Exception as e:
-        await ctx.respond(f"An error occurred: {e}")
+        print(f"An unexpected error occurred: {e}")
+        try:
+            await ctx.respond(f"An unexpected error occurred: {e}")
+        except discord.errors.NotFound:
+            print("Interaction already responded to.")
 
 @bot.slash_command(description="Clear messages in the current channel.")
 async def purge(ctx, amount: int):
