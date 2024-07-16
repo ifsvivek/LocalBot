@@ -7,8 +7,7 @@ from PIL import Image
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
 import yt_dlp as youtube_dl # Be careful with this sync
-from typing import Dict, List, Union # It's good to add type annotations
-
+from typing import Dict, List, Union, Optional # Added Optional import
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -17,11 +16,9 @@ API_KEY = os.getenv("API_KEY")
 SERVER_URL = os.getenv("SERVER_URL")
 MODEL_NAME = os.getenv("MODEL")
 
-
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="$", intents=intents)
-
 
 music_dir = "music"
 os.makedirs(music_dir, exist_ok=True)
@@ -38,7 +35,6 @@ You can also play songs from YouTube and fetch lyrics for the songs.
 If anyone asks why you are named LocalBot, just say that you are a bot that runs locally.
 Use emojis but don't overdo it.
 Remember to have fun!
-
 
 COMMANDS:
 /cat or $cat: Sends a random cat image.
@@ -61,7 +57,6 @@ $clear [amount]: Clears the specified number of messages in the DM.
 END OF SYSTEM MESSAGE
 """
 
-
 ytdl_format_options = {
     "format": "bestaudio/best",
     "extractaudio": True,
@@ -75,12 +70,10 @@ ffmpeg_options = {
     "options": "-vn",
 }
 
-
 async def get_server_state(guild_id):
     if guild_id not in server_state:
         server_state[guild_id] = {"current_song": None, "playlist_queue": []}
     return server_state[guild_id]
-
 
 async def generate_text(server_id: str, channel_id: str, user_id: str, prompt: str, user_name: str) -> Union[str, None]:
     """
@@ -140,8 +133,6 @@ async def generate_text(server_id: str, channel_id: str, user_id: str, prompt: s
             else:
                 return f"Error: Request failed with status code {response.status}"
 
-
-
 async def generate_image(
     prompt: str, model_id: int = 0, use_refiner: bool = False, magic_prompt: bool = False, calc_metrics: bool = False
 ) -> Optional[str]:
@@ -190,7 +181,6 @@ async def on_ready():
     print(f"{bot.user} is ready and online!")
     await bot.change_presence(activity=discord.Game(name="Running on Server"))
 
-
 @bot.event
 async def on_message(message):
     if bot.user.mentioned_in(message) and not message.author.bot:
@@ -200,8 +190,6 @@ async def on_message(message):
         )
     else:
         await bot.process_commands(message)
-
-
 
 @bot.slash_command(description="Send a picture of a cat.")
 async def cat(ctx):
@@ -214,8 +202,6 @@ async def cat(ctx):
             else:
                 await ctx.respond("Failed to fetch cat image. Try again later.", ephemeral=True)
 
-
-
 @bot.slash_command(description="Send a picture of a dog.")
 async def dog(ctx):
     async with aiohttp.ClientSession() as session:
@@ -226,7 +212,6 @@ async def dog(ctx):
                 await ctx.respond(dog_image_link)
             else:
                 await ctx.respond("Failed to fetch dog image. Try again later.", ephemeral=True)
-
 
 @bot.slash_command(description="Game: Guess the number between 1 and 10.")
 async def gtn(ctx):
@@ -246,31 +231,24 @@ async def gtn(ctx):
             f"Sorry, the correct number was {secret_number}. Better luck next time!"
         )
 
-
-
-
 @bot.slash_command(description="Greet the bot.")
 async def hello(ctx):
     await ctx.respond(f"Hello {ctx.author.mention}!")
-
 
 @bot.slash_command(description="Roll a dice with a specified number of sides (default is 6).")
 async def dice(ctx, sides: int = 6):
     result = random.randint(1, sides)
     await ctx.respond(f"🎲 You rolled a {result} on a {sides}-sided dice.")
 
-
 @bot.slash_command(description="Flip a coin.")
 async def flip(ctx):
     result = random.choice(["Heads", "Tails"])
     await ctx.respond(f"🪙 The coin landed on {result}.")
 
-
 @bot.slash_command(description="Ask the bot a yes/no question.")
 async def ask(ctx):
     response = random.choice(["Yes", "No", "Maybe", "Ask again later"])
     await ctx.respond(f"🔮 {response}")
-
 
 @bot.slash_command(description="Chat with the bot using a text-generation model.")
 async def chat(ctx, *, message: str):
@@ -285,7 +263,6 @@ async def chat(ctx, *, message: str):
         await ctx.respond(response)
     else:
         await ctx.respond("Sorry, something went wrong while generating a response.")
-
 
 @bot.slash_command(description="Generate an image based on a given prompt.")
 async def imagine(ctx, *, prompt: str, magic: bool = False, model: int = 0):
@@ -303,7 +280,6 @@ async def purge(ctx, amount: int):
     await ctx.channel.purge(limit=amount + 1)
     await ctx.respond(f"Purged {amount} messages.", delete_after=5)
 
-
 @bot.slash_command(description="Clear messages in the DM.")
 async def clear(ctx, amount: int):
     if isinstance(ctx.channel, discord.DMChannel):
@@ -311,7 +287,6 @@ async def clear(ctx, amount: int):
         await ctx.respond(f"Cleared {amount} messages.", delete_after=5)
     else:
         await ctx.respond("This command can only be used in DMs.")
-
 
 @bot.slash_command(description="Join the voice channel of the user.")
 async def join(ctx):
@@ -322,7 +297,6 @@ async def join(ctx):
         await channel.connect()
         await ctx.respond(f"Joined {channel}.")
 
-
 @bot.slash_command(description="Leave the voice channel.")
 async def leave(ctx):
     if ctx.voice_client is None:
@@ -330,7 +304,6 @@ async def leave(ctx):
     else:
         await ctx.voice_client.disconnect()
         await ctx.respond("Left the voice channel.")
-
 
 @bot.slash_command(description="Play a song in the voice channel.")
 async def play(ctx, *, song: str):
@@ -356,7 +329,6 @@ async def play(ctx, *, song: str):
     ctx.voice_client.play(source)
     await ctx.respond(f"Now playing: {title}")
 
-
 @bot.slash_command(description="Stop the currently playing song.")
 async def stop(ctx):
     if ctx.voice_client is None:
@@ -366,7 +338,6 @@ async def stop(ctx):
         await ctx.respond("Stopped playing the song.")
     else:
         await ctx.respond("No song is currently playing.")
-
 
 @bot.slash_command(description="Fetch the lyrics of a song.")
 async def lyrics(ctx, *, song: str):
@@ -383,7 +354,6 @@ async def lyrics(ctx, *, song: str):
             await ctx.respond("Lyrics not found for the specified song.")
     except Exception as e:
         await ctx.respond(f"An error occurred: {e}")
-
 
 if __name__ == "__main__":
     bot.run(TOKEN)
