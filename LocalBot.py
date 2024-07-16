@@ -1,11 +1,10 @@
-import discord, json, random, asyncio, os, base64, argparse, time, lyricsgenius, functools
+import discord, random, asyncio, os, base64, argparse, time, lyricsgenius
 from dotenv import load_dotenv
 from discord.ext import commands
 from discord import Embed
 import aiohttp
 from PIL import Image
 from io import BytesIO
-from concurrent.futures import ThreadPoolExecutor
 import yt_dlp as youtube_dl
 from typing import Union, Optional
 
