@@ -156,9 +156,9 @@ async def generate_image(
     params = {
         "prompt": prompt,
         "model_id": model_id,
-        "use_refiner": use_refiner,
-        "magic_prompt": magic_prompt,
-        "calc_metrics": calc_metrics,
+        "use_refiner": int(use_refiner),  # Convert boolean to int
+        "magic_prompt": int(magic_prompt),  # Convert boolean to int
+        "calc_metrics": int(calc_metrics),  # Convert boolean to int
     }
 
     async with aiohttp.ClientSession() as session:
