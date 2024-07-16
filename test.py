@@ -1,4 +1,4 @@
-import discord, json, random, asyncio, os, base64, argparse, time, lyricsgenius
+import discord, json, random, asyncio, os, base64, argparse, time, lyricsgenius,shlex
 from dotenv import load_dotenv
 from discord.ext import commands
 from discord import Embed
