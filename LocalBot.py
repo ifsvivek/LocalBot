@@ -1,8 +1,7 @@
-import discord, random, asyncio, os, base64, argparse, time, lyricsgenius
+import discord, random, asyncio, os, base64, argparse, time, lyricsgenius, aiohttp
 from dotenv import load_dotenv
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import Embed
-import aiohttp
 from PIL import Image
 from io import BytesIO
 import yt_dlp as youtube_dl
@@ -56,6 +55,8 @@ $clear [amount]: Clears the specified number of messages in the DM.
 /play [song]: Plays the specified song in the voice channel.
 /stop: Stops the currently playing song.
 /lyrics [song]: Fetches the lyrics of the specified song.
+$lc: Lists all the available commands and their descriptions.
+$llava [prompt]: Get the description of an image with a user-provided prompt.
 
 END OF SYSTEM MESSAGE
 """
@@ -84,62 +85,32 @@ async def get_server_state(guild_id):
 async def generate_text(
     server_id: str, channel_id: str, user_id: str, prompt: str, user_name: str
 ) -> Union[str, None]:
-    """
-    Generate a response text based on the given prompt and conversation history.
-
-    Args:
-        server_id (str): The ID of the server.
-        channel_id (str): The ID of the channel.
-        user_id (str): The ID of the user.
-        prompt (str): The user's prompt.
-        user_name (str): The name of the user.
-
-    Returns:
-        str: The response from the bot.
-        None: In case of an error.
-    """
     global conversation_history
-
-    # Initialize the conversation history if it doesn't exist
     if server_id not in conversation_history:
         conversation_history[server_id] = {}
     if channel_id not in conversation_history[server_id]:
         conversation_history[server_id][channel_id] = {}
     if user_id not in conversation_history[server_id][channel_id]:
         conversation_history[server_id][channel_id][user_id] = []
-
-    # Append the user's prompt to the conversation history
     conversation_history[server_id][channel_id][user_id].append(
         f"{user_name}: {prompt}"
     )
-
-    # Optionally append the system prompt to the conversation history
     if system_prompt:
         conversation_history[server_id][channel_id][user_id].append(
             f"System: {system_prompt}"
         )
-
-    # Join the conversation history into a single context string
     context = "\n".join(conversation_history[server_id][channel_id][user_id])
-
-    # Define the URL and headers for the API request
     url = f"{SERVER_URL}/ollama/api/generate"
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
-
-    # Define the data payload for the API request
     data = {
         "model": MODEL_NAME,
         "prompt": f"<context>{context}</context>\n\nBot:",
         "stream": False,
     }
-
-    # Make the asynchronous API request
     async with aiohttp.ClientSession() as session:
         async with session.post(url, headers=headers, json=data) as response:
-            # Check if the request was successful
             if response.status == 200:
                 result = await response.json()
-                # Append the bot's response to the conversation history
                 conversation_history[server_id][channel_id][user_id].append(
                     f"Bot: {result['response']}"
                 )
@@ -155,19 +126,6 @@ async def generate_image(
     magic_prompt: bool = False,
     calc_metrics: bool = False,
 ) -> Optional[str]:
-    """
-    Generate an image based on the given prompt using an asynchronous API request.
-
-    Args:
-        prompt (str): The prompt for the image generation.
-        model_id (int, optional): The model ID to use. Defaults to 0.
-        use_refiner (bool, optional): Whether to use the refiner. Defaults to False.
-        magic_prompt (bool, optional): Whether to use the magic prompt. Defaults to False.
-        calc_metrics (bool, optional): Whether to calculate metrics. Defaults to False.
-
-    Returns:
-        Optional[str]: The path to the saved image, or None if the request failed.
-    """
     output_dir = "img"
     os.makedirs(output_dir, exist_ok=True)
 
@@ -196,10 +154,32 @@ async def generate_image(
                 return None
 
 
+async def generate_image_description(base64image, prompt):
+    url = "http://localhost:11434/api/generate"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "model": "llava:34b",
+        "stream": False,
+        "prompt": prompt,
+        "images": [base64image],
+    }
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(url, json=payload, headers=headers) as response:
+                response.raise_for_status()
+                json_response = await response.json()
+                return json_response["response"]
+        except aiohttp.ClientError as e:
+            print(f"Error generating image description: {e}")
+            return None
+
+
 @bot.event
 async def on_ready():
     print(f"{bot.user} is ready and online!")
     await bot.change_presence(activity=discord.Game(name="Running on Server"))
+    clear_history_loop.start()
 
 
 @bot.event
@@ -307,14 +287,11 @@ async def chat(ctx, *, message):
 
             is_first_chunk = True
             while response:
-                # Determine where to split the message
                 split_at = response.rfind("\n", 0, 2000)
                 if split_at == -1 or split_at > 2000:
                     split_at = 2000
                 chunk = response[:split_at].strip()
                 response = response[split_at:].strip()
-
-                # Send the message in chunks to avoid hitting the character limit
                 if is_first_chunk:
                     await ctx.message.reply(chunk)
                     is_first_chunk = False
@@ -397,6 +374,170 @@ async def clear(ctx, amount: int = 5):
         await ctx.respond("This command can only be used in direct messages.")
 
 
+@bot.slash_command(description="Join the voice channel.")
+async def join(ctx):
+    if ctx.author.voice:
+        channel = ctx.author.voice.channel
+        await channel.connect()
+        await ctx.response.send_message("Joined the voice channel.")
+    else:
+        await ctx.response.send_message(
+            "You are not in a voice channel!", ephemeral=True
+        )
+
+
+@bot.slash_command(description="Leave the voice channel.")
+async def leave(ctx):
+    if ctx.voice_client:
+        await ctx.voice_client.disconnect()
+        await ctx.response.send_message("Left the voice channel.")
+    else:
+        await ctx.response.send_message("I'm not in a voice channel!", ephemeral=True)
+
+
+async def after_playback(err, ctx):
+    state = await get_server_state(ctx.guild.id)
+
+    if os.path.exists(state["current_song"]["filename"]):
+        os.remove(state["current_song"]["filename"])
+    if err:
+        print(f"Error: {err}")
+
+    if state["playlist_queue"]:
+        next_song = state["playlist_queue"].pop(0)
+        await play_song(ctx, next_song["info"], next_song["filename"])
+    else:
+        state["current_song"] = None
+
+
+async def play_song(ctx, info, filename):
+    state = await get_server_state(ctx.guild.id)
+    state["current_song"] = {"title": info["title"], "filename": filename}
+    ctx.voice_client.play(
+        discord.FFmpegPCMAudio(filename, **ffmpeg_options),
+        after=lambda e: bot.loop.create_task(after_playback(e, ctx)),
+    )
+    await ctx.followup.send(f'Now playing: {info["title"]}')
+
+
+@bot.slash_command(description="Play a song or playlist from YouTube.")
+async def play(ctx, *, query):
+    state = await get_server_state(ctx.guild.id)
+
+    if not ctx.voice_client:
+        await join(ctx)
+
+    ydl = youtube_dl.YoutubeDL(ytdl_format_options)
+
+    if "http" in query:
+        url = query
+    else:
+        url = f"ytsearch:{query}"
+
+    try:
+        info = ydl.extract_info(url, download=True)
+        if "entries" in info:
+            for entry in info["entries"]:
+                filename = ydl.prepare_filename(entry)
+                state["playlist_queue"].append({"info": entry, "filename": filename})
+        else:
+            filename = ydl.prepare_filename(info)
+            state["playlist_queue"].append({"info": info, "filename": filename})
+
+    except Exception as e:
+        await ctx.followup.send(f"Error: {str(e)}")
+        return
+
+    if not state["current_song"]:
+        next_song = state["playlist_queue"].pop(0)
+        await play_song(ctx, next_song["info"], next_song["filename"])
+
+
+@bot.slash_command(description="Stop the current playback.")
+async def stop(ctx):
+    state = await get_server_state(ctx.guild.id)
+    ctx.voice_client.stop()
+    state["current_song"] = None
+    state["playlist_queue"] = []
+    await ctx.response.send_message("Playback stopped.")
+
+
+@bot.slash_command(description="Get lyrics for the current song or a specified song.")
+async def lyrics(ctx, *, song_name: str = None):
+    state = await get_server_state(ctx.guild.id)
+    await ctx.response.defer()
+    search_title = (
+        song_name
+        if song_name
+        else state["current_song"]["title"] if state["current_song"] else None
+    )
+
+    if not search_title:
+        await ctx.followup.send(
+            "No song is currently playing and no song name was provided."
+        )
+        return
+
+    try:
+        song = genius.search_song(search_title)
+        if song:
+            lyrics = song.lyrics
+            if len(lyrics) > 2000:
+                for i in range(0, len(lyrics), 2000):
+                    await ctx.followup.send(lyrics[i : i + 2000])
+            else:
+                await ctx.followup.send(lyrics)
+        else:
+            await ctx.followup.send(f"Lyrics for '{search_title}' not found.")
+    except Exception as e:
+        await ctx.followup.send(f"Error: {str(e)}")
+
+
+@tasks.loop(hours=3)
+async def clear_history_loop():
+    global conversation_history
+    conversation_history.clear()
+    print("Conversation history cleared automatically.")
+
+
+@bot.command(description="Clear the conversation history.")
+async def clear_history(ctx):
+    if ctx.author.id == 471320666075824134:
+        global conversation_history
+        conversation_history.clear()
+        await ctx.send("Conversation history cleared.")
+    else:
+        await ctx.send("You do not have permission to clear the conversation history.")
+
+
+@bot.command(description="Get the description of an image with a user-provided prompt.")
+async def llava(ctx, *, prompt: str):
+    image = None
+    if ctx.message.reference and await ctx.channel.fetch_message(
+        ctx.message.reference.message_id
+    ):
+        replied_message = await ctx.channel.fetch_message(
+            ctx.message.reference.message_id
+        )
+        if replied_message.attachments:
+            attachment = replied_message.attachments[0]
+            if attachment.content_type.startswith("image/"):
+                image_bytes = await attachment.read()
+                image = base64.b64encode(image_bytes).decode("utf-8")
+    elif ctx.message.attachments:
+        attachment = ctx.message.attachments[0]
+        if attachment.content_type.startswith("image/"):
+            image_bytes = await attachment.read()
+            image = base64.b64encode(image_bytes).decode("utf-8")
+    if image:
+        response = await generate_image_description(image, prompt)
+        await ctx.message.reply(response)
+    else:
+        await ctx.message.reply(
+            "No image found. Please attach an image or reply to a message with an image."
+        )
+
+
 @bot.command(description="List all the commands available.")
 async def lc(ctx):
     embed = Embed(
@@ -404,8 +545,6 @@ async def lc(ctx):
         description="List of all commands and their descriptions.",
         color=0x00FF00,
     )
-
-    # Add commands as fields
     embed.add_field(
         name="`/cat` or `$cat`", value="Sends a random cat image.", inline=False
     )
@@ -477,132 +616,13 @@ async def lc(ctx):
         value="Fetches the lyrics for the current song playing in the voice channel.",
         inline=False,
     )
+    embed.add_field(
+        name="`$llava [prompt]`",
+        value="Get the description of an image with a user-provided prompt.",
+        inline=False,
+    )
 
     await ctx.message.reply(embed=embed)
-
-
-@bot.slash_command(description="Join the voice channel.")
-async def join(ctx):
-    if ctx.author.voice:
-        channel = ctx.author.voice.channel
-        await channel.connect()
-        await ctx.response.send_message("Joined the voice channel.")
-    else:
-        await ctx.response.send_message(
-            "You are not in a voice channel!", ephemeral=True
-        )
-
-
-@bot.slash_command(description="Leave the voice channel.")
-async def leave(ctx):
-    if ctx.voice_client:
-        await ctx.voice_client.disconnect()
-        await ctx.response.send_message("Left the voice channel.")
-    else:
-        await ctx.response.send_message("I'm not in a voice channel!", ephemeral=True)
-
-
-async def after_playback(err, ctx):
-    state = await get_server_state(ctx.guild.id)
-
-    if os.path.exists(state["current_song"]["filename"]):
-        os.remove(state["current_song"]["filename"])  # Delete the file after playback
-    if err:
-        print(f"Error: {err}")
-
-    if state["playlist_queue"]:
-        next_song = state["playlist_queue"].pop(0)
-        await play_song(ctx, next_song["info"], next_song["filename"])
-    else:
-        state["current_song"] = None
-
-
-async def play_song(ctx, info, filename):
-    state = await get_server_state(ctx.guild.id)
-    state["current_song"] = {"title": info["title"], "filename": filename}
-    ctx.voice_client.play(
-        discord.FFmpegPCMAudio(filename, **ffmpeg_options),
-        after=lambda e: bot.loop.create_task(after_playback(e, ctx)),
-    )
-    await ctx.followup.send(f'Now playing: {info["title"]}')
-
-
-@bot.slash_command(description="Play a song or playlist from YouTube.")
-async def play(ctx, *, query):
-    state = await get_server_state(ctx.guild.id)
-
-    if not ctx.voice_client:
-        await join(ctx)
-
-    ydl = youtube_dl.YoutubeDL(ytdl_format_options)
-
-    if "http" in query:
-        url = query
-    else:
-        url = f"ytsearch:{query}"
-
-    try:
-        info = ydl.extract_info(url, download=True)
-
-        # If it's a playlist, queue all entries
-        if "entries" in info:
-            for entry in info["entries"]:
-                filename = ydl.prepare_filename(entry)
-                state["playlist_queue"].append({"info": entry, "filename": filename})
-        else:
-            filename = ydl.prepare_filename(info)
-            state["playlist_queue"].append({"info": info, "filename": filename})
-
-    except Exception as e:
-        await ctx.followup.send(f"Error: {str(e)}")
-        return
-
-    if not state["current_song"]:
-        next_song = state["playlist_queue"].pop(0)
-        await play_song(ctx, next_song["info"], next_song["filename"])
-
-
-@bot.slash_command(description="Stop the current playback.")
-async def stop(ctx):
-    state = await get_server_state(ctx.guild.id)
-    ctx.voice_client.stop()
-    state["current_song"] = None
-    state["playlist_queue"] = []
-    await ctx.response.send_message("Playback stopped.")
-
-
-@bot.slash_command(description="Get lyrics for the current song or a specified song.")
-async def lyrics(ctx, *, song_name: str = None):
-    state = await get_server_state(ctx.guild.id)
-    await ctx.response.defer()
-
-    # Use the provided song name or the title of the current playing song
-    search_title = (
-        song_name
-        if song_name
-        else state["current_song"]["title"] if state["current_song"] else None
-    )
-
-    if not search_title:
-        await ctx.followup.send(
-            "No song is currently playing and no song name was provided."
-        )
-        return
-
-    try:
-        song = genius.search_song(search_title)
-        if song:
-            lyrics = song.lyrics
-            # Discord has a character limit for messages (2000 characters), so split if necessary
-            if len(lyrics) > 2000:
-                for i in range(0, len(lyrics), 2000):
-                    await ctx.followup.send(lyrics[i : i + 2000])
-            else:
-                await ctx.followup.send(lyrics)
-        else:
-            await ctx.followup.send(f"Lyrics for '{search_title}' not found.")
-    except Exception as e:
-        await ctx.followup.send(f"Error: {str(e)}")
 
 
 bot.run(TOKEN)
