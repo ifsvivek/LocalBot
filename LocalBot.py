@@ -96,9 +96,10 @@ async def generate_text(
         f"{user_name}: {prompt}"
     )
     if system_prompt:
-        conversation_history[server_id][channel_id][user_id].append(
-            f"System: {system_prompt}"
-        )
+        system_message = f"System: {system_prompt}"
+        if system_message not in conversation_history[server_id][channel_id][user_id]:
+            conversation_history[server_id][channel_id][user_id].insert(0, system_message)
+            
     context = "\n".join(conversation_history[server_id][channel_id][user_id])
     url = f"{SERVER_URL}/ollama/api/generate"
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
