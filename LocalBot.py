@@ -6,6 +6,7 @@ from PIL import Image
 from io import BytesIO
 import yt_dlp as youtube_dl
 from typing import Union, Optional
+from groq import Groq
 
 
 load_dotenv()
@@ -98,8 +99,10 @@ async def generate_text(
     if system_prompt:
         system_message = f"System: {system_prompt}"
         if system_message not in conversation_history[server_id][channel_id][user_id]:
-            conversation_history[server_id][channel_id][user_id].insert(0, system_message)
-            
+            conversation_history[server_id][channel_id][user_id].insert(
+                0, system_message
+            )
+
     context = "\n".join(conversation_history[server_id][channel_id][user_id])
     url = f"{SERVER_URL}/ollama/api/generate"
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
@@ -118,6 +121,22 @@ async def generate_text(
                 return result["response"]
             else:
                 return f"Error: Request failed with status code {response.status}"
+
+
+async def generate_chat_completion(prompt: str, username: str) -> str:
+    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+
+    chat_completion = client.chat.completions.create(
+        messages=[
+            {
+                "role": "user",
+                "content": f"{username}: {prompt}",
+            }
+        ],
+        model="llama-3.1-405b-reasoning",
+    )
+
+    return chat_completion.choices[0].message.content
 
 
 async def generate_image(
@@ -192,6 +211,31 @@ async def on_message(message):
         )
     else:
         await bot.process_commands(message)
+
+
+@bot.command(description="Chat with the bot.")
+async def groq(ctx, *, message):
+    async with ctx.typing():
+        try:
+            user_name = ctx.author.name
+            prompt = message
+
+            response = await generate_chat_completion(prompt, user_name)
+
+            is_first_chunk = True
+            while response:
+                split_at = response.rfind("\n", 0, 2000)
+                if split_at == -1 or split_at > 2000:
+                    split_at = 2000
+                chunk = response[:split_at].strip()
+                response = response[split_at:].strip()
+                if is_first_chunk:
+                    await ctx.message.reply(chunk)
+                    is_first_chunk = False
+                else:
+                    await ctx.send(chunk)
+        except Exception as e:
+            print(e)
 
 
 @bot.slash_command(description="Send a picture of a cat.")

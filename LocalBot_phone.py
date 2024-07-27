@@ -1,9 +1,10 @@
-import discord, requests, json, random, asyncio, os, shlex, base64, argparse, time
+import discord, requests, random, asyncio, os, shlex, base64, argparse, time
 from dotenv import load_dotenv
 from discord.ext import commands
-from discord import File, Embed
+from discord import Embed
 from PIL import Image
 from io import BytesIO
+from groq import Groq
 
 
 load_dotenv()
@@ -11,24 +12,28 @@ TOKEN = os.getenv("TOKEN")
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="$", intents=intents)
-OLLAMA_API_URL = "http://127.0.0.1:11434/api/generate"
-model_name = "tinyllama"
 chunk_size = 2000
 
 
-def ollama_chat(prompt, model):
-    payload = {"prompt": prompt, "model": model, "max_tokens": 150}
-    response = requests.post(OLLAMA_API_URL, json=payload)
-    response.raise_for_status()
-    parts = response.text.strip().split("\n")
-    combined_response = ""
-    for part in parts:
-        json_part = json.loads(part)
-        combined_response += json_part.get("response", "")
-    return combined_response
+async def generate_chat_completion(prompt: str, username: str) -> str:
+    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+
+    chat_completion = client.chat.completions.create(
+        messages=[
+            {
+                "role": "user",
+                "content": f"{username}: {prompt}",
+            }
+        ],
+        model="llama-3.1-405b-reasoning",
+    )
+
+    return chat_completion.choices[0].message.content
 
 
-def generate_image(prompt, model_id=0, use_refiner=False, magic_prompt=False, calc_metrics=False):
+def generate_image(
+    prompt, model_id=0, use_refiner=False, magic_prompt=False, calc_metrics=False
+):
     output_dir = "img"
     os.makedirs(output_dir, exist_ok=True)
 
@@ -148,13 +153,11 @@ async def ask(ctx):
 async def chat(ctx, *, message):
     async with ctx.typing():
         try:
-            if ctx.message.reference:
-                original_message = await ctx.channel.fetch_message(
-                    ctx.message.reference.message_id
-                )
-                message = original_message.content + "\n" + message
+            user_name = ctx.author.name
+            prompt = message
 
-            response = ollama_chat(message, model_name)
+            response = await generate_chat_completion(prompt, user_name)
+
             is_first_chunk = True
             while response:
                 split_at = response.rfind("\n", 0, 2000)
@@ -162,7 +165,6 @@ async def chat(ctx, *, message):
                     split_at = 2000
                 chunk = response[:split_at].strip()
                 response = response[split_at:].strip()
-
                 if is_first_chunk:
                     await ctx.message.reply(chunk)
                     is_first_chunk = False
@@ -238,6 +240,7 @@ async def clear(ctx, amount: int = 5):
     else:
         await ctx.respond("This command can only be used in direct messages.")
 
+
 @bot.command(description="List all the commands available.")
 async def lc(ctx):
     embed = Embed(
@@ -278,9 +281,18 @@ async def lc(ctx):
         value="Generates an image based on the provided prompt. `--magic`: Uses a magic prompt. `--model`: Specify the model to use for image generation. Range: [0, 1, 2, 3, 4].",
         inline=False,
     )
-    embed.add_field(name="`/purge [amount]` or `$purge [amount]`", value="Deletes the specified number of messages in the channel. Requires the `Manage Messages` permission.", inline=False)
-    embed.add_field(name="`$clear [amount]`", value="Clears the specified number of messages in the DM.", inline=False)
+    embed.add_field(
+        name="`/purge [amount]` or `$purge [amount]`",
+        value="Deletes the specified number of messages in the channel. Requires the `Manage Messages` permission.",
+        inline=False,
+    )
+    embed.add_field(
+        name="`$clear [amount]`",
+        value="Clears the specified number of messages in the DM.",
+        inline=False,
+    )
 
     await ctx.message.reply(embed=embed)
-    
+
+
 bot.run(TOKEN)
