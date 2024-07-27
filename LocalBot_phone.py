@@ -199,9 +199,19 @@ async def chat(ctx, *, message):
     async with ctx.typing():
         try:
             user_name = ctx.author.name
+            user_id = str(ctx.author.id)
+            server_id = str(ctx.guild.id)
+            channel_id = str(ctx.channel.id)
             prompt = message
 
-            response = await generate_chat_completion(prompt, user_name)
+            response = await generate_chat_completion(
+                prompt=prompt,
+                username=user_name,
+                server_id=server_id,
+                channel_id=channel_id,
+                user_id=user_id,
+                user_name=user_name,
+            )
 
             is_first_chunk = True
             while response:
