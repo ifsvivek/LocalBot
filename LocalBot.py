@@ -123,15 +123,46 @@ async def generate_text(
                 return f"Error: Request failed with status code {response.status}"
 
 
-async def generate_chat_completion(prompt: str, username: str) -> str:
+async def generate_chat_completion(
+    prompt: str,
+    username: str,
+    server_id: str,
+    channel_id: str,
+    user_id: str,
+    user_name: str,
+    system_prompt: str = None,
+) -> str:
+    global conversation_history
+    if server_id not in conversation_history:
+        conversation_history[server_id] = {}
+    if channel_id not in conversation_history[server_id]:
+        conversation_history[server_id][channel_id] = {}
+    if user_id not in conversation_history[server_id][channel_id]:
+        conversation_history[server_id][channel_id][user_id] = []
+    conversation_history[server_id][channel_id][user_id].append(
+        f"{user_name}: {prompt}"
+    )
+    if system_prompt:
+        system_message = f"System: {system_prompt}"
+        if system_message not in conversation_history[server_id][channel_id][user_id]:
+            conversation_history[server_id][channel_id][user_id].insert(
+                0, system_message
+            )
+
+    context = "\n".join(conversation_history[server_id][channel_id][user_id])
+
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
     chat_completion = client.chat.completions.create(
         messages=[
             {
+                "role": "system",
+                "content": context,
+            },
+            {
                 "role": "user",
                 "content": f"{username}: {prompt}",
-            }
+            },
         ],
         model="llama3-groq-70b-8192-tool-use-preview",
     )
@@ -218,9 +249,19 @@ async def groq(ctx, *, message):
     async with ctx.typing():
         try:
             user_name = ctx.author.name
+            user_id = str(ctx.author.id)
+            server_id = str(ctx.guild.id)
+            channel_id = str(ctx.channel.id)
             prompt = message
 
-            response = await generate_chat_completion(prompt, user_name)
+            response = await generate_chat_completion(
+                prompt=prompt,
+                username=user_name,
+                server_id=server_id,
+                channel_id=channel_id,
+                user_id=user_id,
+                user_name=user_name,
+            )
 
             is_first_chunk = True
             while response:
