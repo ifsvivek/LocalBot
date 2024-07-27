@@ -9,21 +9,66 @@ from groq import Groq
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
+GENIUS_TOKEN = os.getenv("GENIUS_TOKEN")
+
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="$", intents=intents)
 chunk_size = 2000
+conversation_history = {}
+system_prompt = """
+System: This is a system message.
+Your name is LocalBot.
+You are designed to chat with users and generate images based on prompts.
+You can also play songs from YouTube and fetch lyrics for the songs.
+If anyone asks why you are named LocalBot, just say that you are a bot that runs locally.
+Use emojis but don't overdo it.
+Remember to have fun!
+
+END OF SYSTEM MESSAGE
+"""
 
 
-async def generate_chat_completion(prompt: str, username: str) -> str:
+async def generate_chat_completion(
+    prompt: str,
+    username: str,
+    server_id: str,
+    channel_id: str,
+    user_id: str,
+    user_name: str,
+    system_prompt: str = None,
+) -> str:
+    global conversation_history
+    if server_id not in conversation_history:
+        conversation_history[server_id] = {}
+    if channel_id not in conversation_history[server_id]:
+        conversation_history[server_id][channel_id] = {}
+    if user_id not in conversation_history[server_id][channel_id]:
+        conversation_history[server_id][channel_id][user_id] = []
+    conversation_history[server_id][channel_id][user_id].append(
+        f"{user_name}: {prompt}"
+    )
+    if system_prompt:
+        system_message = f"System: {system_prompt}"
+        if system_message not in conversation_history[server_id][channel_id][user_id]:
+            conversation_history[server_id][channel_id][user_id].insert(
+                0, system_message
+            )
+
+    context = "\n".join(conversation_history[server_id][channel_id][user_id])
+
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
     chat_completion = client.chat.completions.create(
         messages=[
             {
+                "role": "system",
+                "content": context,
+            },
+            {
                 "role": "user",
                 "content": f"{username}: {prompt}",
-            }
+            },
         ],
         model="llama3-groq-70b-8192-tool-use-preview",
     )
