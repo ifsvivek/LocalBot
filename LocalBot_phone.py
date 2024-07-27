@@ -25,7 +25,7 @@ async def generate_chat_completion(prompt: str, username: str) -> str:
                 "content": f"{username}: {prompt}",
             }
         ],
-        model="llama-3.1-405b-reasoning",
+        model="llama3-groq-70b-8192-tool-use-preview",
     )
 
     return chat_completion.choices[0].message.content
