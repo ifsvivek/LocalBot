@@ -30,32 +30,60 @@ END OF SYSTEM MESSAGE
 
 
 async def generate_chat_completion(
-    prompt: str,
-    username: str,
-    server_id: str,
+    server_id: Union[str, None],
     channel_id: str,
     user_id: str,
+    prompt: str,
     user_name: str,
-    system_prompt: str = None,
-) -> str:
+) -> Union[str, None]:
     global conversation_history
-    if server_id not in conversation_history:
-        conversation_history[server_id] = {}
-    if channel_id not in conversation_history[server_id]:
-        conversation_history[server_id][channel_id] = {}
-    if user_id not in conversation_history[server_id][channel_id]:
-        conversation_history[server_id][channel_id][user_id] = []
-    conversation_history[server_id][channel_id][user_id].append(
-        f"{user_name}: {prompt}"
-    )
+
+    # Handle conversation history differently for server and DM contexts
+    if server_id is not None:
+        if server_id not in conversation_history:
+            conversation_history[server_id] = {}
+        if channel_id not in conversation_history[server_id]:
+            conversation_history[server_id][channel_id] = {}
+        if user_id not in conversation_history[server_id][channel_id]:
+            conversation_history[server_id][channel_id][user_id] = []
+        conversation_history[server_id][channel_id][user_id].append(
+            f"{user_name}: {prompt}"
+        )
+    else:
+        # Use "DM" as a key for direct messages to differentiate from server contexts
+        dm_key = "DM"
+        if dm_key not in conversation_history:
+            conversation_history[dm_key] = {}
+        if channel_id not in conversation_history[dm_key]:
+            conversation_history[dm_key][channel_id] = {}
+        if user_id not in conversation_history[dm_key][channel_id]:
+            conversation_history[dm_key][channel_id][user_id] = []
+        conversation_history[dm_key][channel_id][user_id].append(
+            f"{user_name}: {prompt}"
+        )
+
+    # Append the system prompt if not already present
     if system_prompt:
         system_message = f"System: {system_prompt}"
-        if system_message not in conversation_history[server_id][channel_id][user_id]:
-            conversation_history[server_id][channel_id][user_id].insert(
-                0, system_message
-            )
+        if server_id is not None:
+            if (
+                system_message
+                not in conversation_history[server_id][channel_id][user_id]
+            ):
+                conversation_history[server_id][channel_id][user_id].insert(
+                    0, system_message
+                )
+        else:
+            if system_message not in conversation_history[dm_key][channel_id][user_id]:
+                conversation_history[dm_key][channel_id][user_id].insert(
+                    0, system_message
+                )
 
-    context = "\n".join(conversation_history[server_id][channel_id][user_id])
+    # Construct the context
+    if server_id is not None:
+        context = "\n".join(conversation_history[server_id][channel_id][user_id])
+    else:
+        context = "\n".join(conversation_history[dm_key][channel_id][user_id])
 
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
@@ -67,7 +95,7 @@ async def generate_chat_completion(
             },
             {
                 "role": "user",
-                "content": f"{username}: {prompt}",
+                "content": f"{user_name}: {prompt}",
             },
         ],
         model="llama3-groq-70b-8192-tool-use-preview",
@@ -198,15 +226,19 @@ async def ask(ctx):
 async def chat(ctx, *, message):
     async with ctx.typing():
         try:
-            user_name = ctx.author.name
+            if ctx.guild is None:
+                server_id = None
+                channel_id = str(ctx.channel.id)
+            else:
+                server_id = str(ctx.guild.id)
+                channel_id = str(ctx.channel.id)
+
             user_id = str(ctx.author.id)
-            server_id = str(ctx.guild.id)
-            channel_id = str(ctx.channel.id)
+            user_name = ctx.author.name
             prompt = message
 
             response = await generate_chat_completion(
                 prompt=prompt,
-                username=user_name,
                 server_id=server_id,
                 channel_id=channel_id,
                 user_id=user_id,
