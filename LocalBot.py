@@ -524,9 +524,11 @@ async def imagine(ctx, *, args):
         print(e)
 
 
-@bot.command(description="Generate an image based on a prompt.")
+@bot.slash_command(description="Generate an image based on a prompt.")
 async def flux(ctx, *, prompt):
     try:
+        initial_message = await ctx.respond("Generating image, please wait...")
+
         start_time = time.time()
         result = subprocess.run(
             [".venv/bin/python", "genflux.py", prompt], capture_output=True, text=True
@@ -540,13 +542,14 @@ async def flux(ctx, *, prompt):
             embed = discord.Embed(title=embed_title, color=0x00FF00)
             embed.set_image(url=f"attachment://{os.path.basename(image_path)}")
             embed.set_footer(text=f"{time_taken:.2f}s")
-            await ctx.message.reply(embed=embed, file=discord.File(image_path))
+            await initial_message.edit(content=None, embed=embed, file=discord.File(image_path))
             if os.path.exists(image_path):
                 os.remove(image_path)
         else:
-            await print(f"Failed to generate image: {result.stderr}")
+            await initial_message.edit(content=f"Failed to generate image: {result.stderr}")
     except Exception as e:
         print(e)
+        await initial_message.edit(content=f"An error occurred: {str(e)}")
 
 
 @bot.slash_command(description="Delete a set number of messages.")
