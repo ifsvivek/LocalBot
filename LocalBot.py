@@ -1,4 +1,4 @@
-import discord, random, asyncio, os, base64, argparse, time, lyricsgenius, aiohttp
+import discord, random, asyncio, os, base64, argparse, time, lyricsgenius, aiohttp, subprocess
 from dotenv import load_dotenv
 from discord.ext import commands, tasks
 from discord import Embed
@@ -520,6 +520,31 @@ async def imagine(ctx, *, args):
         await ctx.message.reply(embed=embed, file=discord.File(image_path))
         if os.path.exists(image_path):
             os.remove(image_path)
+    except Exception as e:
+        print(e)
+
+
+@bot.command(description="Generate an image based on a prompt.")
+async def flux(ctx, *, prompt):
+    try:
+        start_time = time.time()
+        result = subprocess.run(
+            [".venv/bin/python", "genflux.py", prompt], capture_output=True, text=True
+        )
+        end_time = time.time()
+        time_taken = end_time - start_time
+
+        if result.returncode == 0:
+            image_path = "img/flux-dev.png"
+            embed_title = prompt[:253] + "..." if len(prompt) > 256 else prompt
+            embed = discord.Embed(title=embed_title, color=0x00FF00)
+            embed.set_image(url=f"attachment://{os.path.basename(image_path)}")
+            embed.set_footer(text=f"{time_taken:.2f}s")
+            await ctx.message.reply(embed=embed, file=discord.File(image_path))
+            if os.path.exists(image_path):
+                os.remove(image_path)
+        else:
+            await print(f"Failed to generate image: {result.stderr}")
     except Exception as e:
         print(e)
 

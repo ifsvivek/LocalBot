@@ -1,6 +1,7 @@
 __pycache__
 tiny/model.safetensors
 .env
+.venv
 img/
 *.out
 music/
