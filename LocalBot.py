@@ -451,7 +451,7 @@ async def chat(ctx, *, message):
             user_name = ctx.author.name
             prompt = message
 
-            response = await generate_text(
+            response = await generate_chat_completion(
                 server_id, channel_id, user_id, prompt, user_name
             )
 
