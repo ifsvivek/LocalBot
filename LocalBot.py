@@ -52,7 +52,7 @@ COMMANDS:
 /flip or $flip: Coin flip.
 /ask or $ask: Yes/no response.
 /chat [message] or $chat [message]: Chat with the bot.
-/imagine [prompt]: Generate an image (--magic for magic prompt, --model to specify model).
+/imagine [prompt]: Generate an image based on a prompt.
 /purge [amount] or $purge [amount]: Delete messages (requires Manage Messages).
 $clear [amount]: Clear messages in DM.
 /join: Join voice channel.
