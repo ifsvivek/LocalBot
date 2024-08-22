@@ -1,3 +1,4 @@
+# non slash commands version of LocalBot.py
 import discord, random, asyncio, os, base64, time, lyricsgenius, aiohttp
 from dotenv import load_dotenv
 from discord.ext import commands, tasks
