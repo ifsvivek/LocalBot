@@ -3,9 +3,11 @@ This Discord bot is a fun and interactive bot that provides various commands to 
 
 ## Installation
 1. Clone or download the repository to your local machine.
-2. Install the required dependencies by running `pip install -r requirements.txt`.
-3. Create a `.env` file in the root directory of the project.
-4. Inside the `.env` file, add your Discord bot token in the following format:
+2. Create a virtual environment by running `python -m venv venv` in your terminal.
+3. Activate the virtual environment by running `source venv/bin/activate` on Linux or `venv\Scripts\activate` on Windows.
+4. Install the required dependencies by running `pip install -r requirements.txt`.
+5. Create a `.env` file in the root directory of the project.
+6. Inside the `.env` file, add your Discord bot token in the following format:
     ```
     TOKEN=your_discord_bot_token_here
     GENIUS_TOKEN=your_genius_token_here
@@ -13,9 +15,9 @@ This Discord bot is a fun and interactive bot that provides various commands to 
     SERVER_URL=your_openwebui_server_url_here
     MODEL=model_name_here
     ```
-5. Ensure your bot has the necessary permissions in your Discord server.
-6. Run the bot script by executing `python LocalBot.py` or `python LocalBot_phone.py` in your terminal, depending on your use case.
-7. or use `nohup python3 LocalBot.py &` to run the bot in the background.
+7. Ensure your bot has the necessary permissions in your Discord server.
+8. Run the bot script by executing `python LocalBot.py` or `python LocalBot_phone.py` in your terminal, depending on your use case.
+9. or use `nohup python3 LocalBot.py &` to run the bot in the background.
 
 ## Usage
 Once the bot is running and connected to your Discord server, users can interact with it using various commands prefixed with `$`. The bot supports both traditional commands and slash commands for enhanced interaction within Discord.
