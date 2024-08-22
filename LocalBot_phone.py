@@ -288,12 +288,9 @@ async def imagine(ctx, *, prompt: str) -> None:
         time_taken = time.time() - start_time
 
         if image_path:
-            embed_title = prompt[:253] + "..." if len(prompt) > 256 else prompt
-            embed = discord.Embed(title=embed_title, color=0x00FF00)
-            embed.set_image(url=f"attachment://{os.path.basename(image_path)}")
-            embed.set_footer(text=f"Time taken: {time_taken:.2f}s")
-            await initial_message.edit(content=None, embed=embed)
-            await ctx.send(file=discord.File(image_path))
+            title = prompt[:253] + "..." if len(prompt) > 256 else prompt
+            await initial_message.delete()
+            await ctx.reply(f"Title: {title}\nTime taken: {time_taken:.2f}s", file=discord.File(image_path))
             if os.path.exists(image_path):
                 os.remove(image_path)
         else:
