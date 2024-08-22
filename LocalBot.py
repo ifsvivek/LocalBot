@@ -154,7 +154,7 @@ async def generate_image(
 @bot.event
 async def on_ready():
     print(f"{bot.user} is ready and online!")
-    await bot.change_presence(activity=discord.Game(name="Running on Server"))
+    await bot.change_presence(activity=discord.Game(name="Running on procrastination and caffeine"))
     clear_history_loop.start()
 
 
