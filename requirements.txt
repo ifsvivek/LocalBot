@@ -1,7 +1,7 @@
+py-cord
 discord.py
 python-dotenv
 requests
-py-cord
 yt_dlp
 pillow
 lyricsgenius
