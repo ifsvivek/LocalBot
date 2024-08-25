@@ -252,16 +252,15 @@ async def flip(ctx):
 
 
 @bot.slash_command(description="Ask the bot a yes/no question.")
-async def ask(ctx):
+async def ask(ctx, question: str):
     result = random.choice(["Yes", "No"])
-    await ctx.respond(result)
+    await ctx.respond(f"Question: {question}\nAnswer: {result}")
 
 
 @bot.command(description="Chat with the bot.")
 async def chat(ctx, *, message):
     async with ctx.typing():
         try:
-            # message = message.replace("<", "").replace(">", "")
             server_id = str(ctx.guild.id) if ctx.guild else None
             channel_id = str(ctx.channel.id)
             user_id = str(ctx.author.id)
