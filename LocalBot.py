@@ -51,13 +51,8 @@ flip: Coin flip.
 ask: Yes/no response.
 chat [message]: Chat with the bot.
 imagine [prompt]: Generate an image based on a prompt.
-purge [amount] or $purge [amount]: Delete messages (requires Manage Messages).
+purge [amount]: Delete messages (requires Manage Messages).
 clear [amount]: Clear messages in DM.
-join: Join voice channel.
-leave: Leave voice channel.
-play [song]: Play song in voice channel.
-stop: Stop playing song.
-lyrics [song]: Fetch song lyrics.
 flux [prompt]: Generate an image using Flux.
 
 END OF SYSTEM MESSAGE
@@ -305,7 +300,7 @@ async def chat(ctx, *, message):
                 channel_id=channel_id,
                 user_id=user_id,
             )
-
+            print(f"Chat response: {response}")
             if "<tool_call>" in response and "</tool_call>" in response:
                 await handle_tool_call(ctx, response)
             else:
@@ -373,8 +368,17 @@ async def imagine(ctx, *, prompt: str) -> None:
 
 @bot.slash_command(description="Generate an image based on a prompt.")
 async def flux(ctx, *, prompt):
+    async def send_initial_message():
+        if hasattr(ctx, "respond"):
+            return await ctx.respond("Generating image, please wait...")
+        else:
+            return await ctx.reply("Generating image, please wait...")
+
+    async def edit_message(initial_message, content=None, embed=None, file=None):
+        await initial_message.edit(content=content, embed=embed, file=file)
+
     try:
-        initial_message = await send_response(ctx, "Generating image, please wait...")
+        initial_message = await send_initial_message()
 
         start_time = time.time()
         result = subprocess.run(
@@ -388,17 +392,23 @@ async def flux(ctx, *, prompt):
             embed_title = prompt[:253] + "..." if len(prompt) > 256 else prompt
             embed = discord.Embed(title=embed_title, color=0x00FF00)
             embed.set_image(url=f"attachment://{os.path.basename(image_path)}")
-            embed.set_footer(text=f"{time_taken:.2f}s")
-            await initial_message.edit(
-                content=None, embed=embed, file=discord.File(image_path)
+            embed.set_footer(text=f"Time taken: {time_taken:.2f}s")
+            await edit_message(
+                initial_message,
+                content=None,
+                embed=embed,
+                file=discord.File(image_path),
             )
             if os.path.exists(image_path):
                 os.remove(image_path)
         else:
-            await initial_message.edit(content="Failed to generate image")
+            await edit_message(initial_message, content="Failed to generate image.")
     except Exception as e:
-        print(e)
-        await send_response(ctx, "An error occurred while generating the image.")
+        print(f"An error occurred: {e}")
+        if hasattr(ctx, "respond"):
+            await ctx.respond("An error occurred while generating the image.")
+        else:
+            await ctx.reply("An error occurred while generating the image.")
 
 
 @bot.slash_command(description="Delete a set number of messages.")
