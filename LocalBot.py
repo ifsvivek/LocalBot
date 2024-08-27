@@ -83,9 +83,12 @@ async def send_response(ctx, message):
         await ctx.respond(message)
     else:
         await ctx.reply(message)
+    print(f"Response: {message}")
+    return message        
 
 
 async def generate_chat_completion(
+    ctx,
     server_id: Union[str, None],
     channel_id: str,
     user_id: str,
@@ -96,13 +99,15 @@ async def generate_chat_completion(
 
     groq_chat = ChatGroq(groq_api_key=groq_api_key, model_name=model_name)
     context_key = server_id if server_id is not None else f"DM-{channel_id}-{user_id}"
+
+    global conversation_memory
     if "conversation_memory" not in globals():
-        global conversation_memory
         conversation_memory = {}
     if context_key not in conversation_memory:
         conversation_memory[context_key] = ConversationBufferWindowMemory(
             k=10, memory_key="chat_history", return_messages=True
         )
+
     prompt_template = ChatPromptTemplate.from_messages(
         [
             SystemMessage(content=system_prompt),
@@ -116,8 +121,57 @@ async def generate_chat_completion(
         memory=conversation_memory[context_key],
         verbose=False,
     )
+    print(f"Conversation memory: {conversation.memory}")
+
     response = conversation.predict(human_input=prompt)
+    if "<tool_call>" in response and "</tool_call>" in response:
+        response = await handle_tool_call(
+            ctx, response, conversation_memory[context_key]
+        )
     return response
+
+
+async def handle_tool_call(ctx, response, memory):
+    start = response.index("<tool_call>") + len("<tool_call>")
+    end = response.index("</tool_call>")
+    tool_call_json = response[start:end].strip()
+
+    try:
+        tool_call = json.loads(tool_call_json)
+        tool_name = tool_call.get("name")
+        tool_arguments = tool_call.get("arguments", {})
+        result = None
+
+        tool_actions = {
+            "imagine": lambda: imagine(ctx, prompt=tool_arguments.get("prompt")),
+            "flux": lambda: flux(ctx, prompt=tool_arguments.get("prompt")),
+            "cat": lambda: cat(ctx),
+            "dog": lambda: dog(ctx),
+            "gtn": lambda: gtn(ctx),
+            "hello": lambda: hello(ctx),
+            "dice": lambda: dice(ctx, sides=tool_arguments.get("sides", 6)),
+            "flip": lambda: flip(ctx),
+            "ask": lambda: ask(ctx, question=tool_arguments.get("question")),
+            "purge": lambda: purge(ctx, amount=tool_arguments.get("amount")),
+            "play": lambda: play(ctx, query=tool_arguments.get("query")),
+            "stop": lambda: stop(ctx),
+            "lyrics": lambda: lyrics(ctx, song_name=tool_arguments.get("song_name")),
+        }
+
+        action = tool_actions.get(
+            tool_name, lambda: send_response(ctx, "Tool not found.")
+        )
+        result = await action()
+
+        if result is not None:
+            # Find the last message and update it
+            memory.chat_memory.messages[-1].content += f"\nResult: {result}"
+    except Exception as e:
+        await send_response(
+            ctx, f"An error occurred while processing the tool call: {e}"
+        )
+
+    return memory.chat_memory.messages[-1].content 
 
 
 async def generate_image(
@@ -151,43 +205,6 @@ async def generate_image(
                 return None
 
 
-async def handle_tool_call(ctx, response):
-    start = response.index("<tool_call>") + len("<tool_call>")
-    end = response.index("</tool_call>")
-    tool_call_json = response[start:end].strip()
-
-    try:
-        tool_call = json.loads(tool_call_json)
-        tool_name = tool_call.get("name")
-        tool_arguments = tool_call.get("arguments", {})
-
-        tool_actions = {
-            "imagine": lambda: imagine(ctx, prompt=tool_arguments.get("prompt")),
-            "flux": lambda: flux(ctx, prompt=tool_arguments.get("prompt")),
-            "cat": lambda: cat(ctx),
-            "dog": lambda: dog(ctx),
-            "gtn": lambda: gtn(ctx),
-            "hello": lambda: hello(ctx),
-            "dice": lambda: dice(ctx, sides=tool_arguments.get("sides", 6)),
-            "flip": lambda: flip(ctx),
-            "ask": lambda: ask(ctx, question=tool_arguments.get("question")),
-            "purge": lambda: purge(ctx, amount=tool_arguments.get("amount")),
-            "play": lambda: play(ctx, query=tool_arguments.get("query")),
-            "stop": lambda: stop(ctx),
-            "lyrics": lambda: lyrics(ctx, song_name=tool_arguments.get("song_name")),
-        }
-
-        action = tool_actions.get(
-            tool_name, lambda: send_response(ctx, "Tool not found.")
-        )
-        await action()
-
-    except Exception as e:
-        await send_response(
-            ctx, f"An error occurred while processing the tool call: {e}"
-        )
-
-
 @bot.event
 async def on_ready():
     print(f"{bot.user} is ready and online!")
@@ -218,6 +235,7 @@ async def cat(ctx):
                 data = await response.json()
                 image_url = data[0]["url"]
                 await send_response(ctx, image_url)
+                return image_url
             else:
                 await send_response(ctx, "Failed to fetch cat image.")
 
@@ -232,6 +250,7 @@ async def dog(ctx):
                 data = await response.json()
                 image_url = data[0]["url"]
                 await send_response(ctx, image_url)
+                return image_url
             else:
                 await send_response(ctx, "Failed to fetch dog image.")
 
@@ -257,6 +276,7 @@ async def gtn(ctx):
                 await send_response(
                     ctx, f"Sorry, the correct number was {secret_number}."
                 )
+            return f"Guessed number: {guess_number}\nSecret number: {secret_number}"
         else:
             await send_response(ctx, "Please enter a number between 1 and 10.")
     except asyncio.TimeoutError:
@@ -266,24 +286,28 @@ async def gtn(ctx):
 @bot.slash_command(description="Tell the user hello.")
 async def hello(ctx):
     await send_response(ctx, f"Hello, {ctx.author.name}!")
+    return f"Hello, {ctx.author.name}!"
 
 
 @bot.slash_command(description="Roll a dice with the specified number of sides.")
 async def dice(ctx, sides: int = 6):
     result = random.randint(1, sides)
     await send_response(ctx, f"You rolled a {result}.")
+    return f"Rolled a {result} on a {sides}-sided dice."
 
 
 @bot.slash_command(description="Flip a coin.")
 async def flip(ctx):
     result = random.choice(["Heads", "Tails"])
     await send_response(ctx, f"The coin landed on: **{result}**")
+    return f"Coin flip result: {result}"
 
 
 @bot.slash_command(description="Ask the bot a yes/no question.")
 async def ask(ctx, question: str):
     result = random.choice(["Yes", "No"])
     await send_response(ctx, f"Question: {question}\nAnswer: {result}")
+    return f"Question: {question}\nAnswer: {result}"
 
 
 @bot.command(description="Chat with the bot.")
@@ -295,28 +319,29 @@ async def chat(ctx, *, message):
             user_id = str(ctx.author.id)
 
             response = await generate_chat_completion(
+                ctx=ctx,
                 prompt=message,
                 server_id=server_id,
                 channel_id=channel_id,
                 user_id=user_id,
             )
             print(f"Chat response: {response}")
-            if "<tool_call>" in response and "</tool_call>" in response:
-                await handle_tool_call(ctx, response)
-            else:
-                is_first_chunk = True
-                while response:
-                    split_at = (response[:2000].rfind("\n") + 1) or 2000
-                    chunk, response = (
-                        response[:split_at].strip(),
-                        response[split_at:].strip(),
-                    )
 
-                    if is_first_chunk:
-                        await send_response(ctx, chunk)
-                        is_first_chunk = False
-                    else:
-                        await ctx.send(chunk)
+            if "<tool_call>" in response:
+                return
+
+            is_first_chunk = True
+            while response:
+                split_at = (response[:2000].rfind("\n") + 1) or 2000
+                chunk, response = (
+                    response[:split_at].strip(),
+                    response[split_at:].strip(),
+                )
+                if is_first_chunk:
+                    await send_response(ctx, chunk)
+                    is_first_chunk = False
+                else:
+                    await ctx.send(chunk)
 
         except Exception as e:
             print(f"Error: {e}")
@@ -415,6 +440,7 @@ async def flux(ctx, *, prompt):
 async def purge(ctx, amount: int):
     await ctx.channel.purge(limit=amount + 1)
     await send_response(ctx, f"Deleted {amount} messages.")
+    return f"Deleted {amount} messages."
 
 
 @bot.command(description="Delete a set number of bot messages in DM")
