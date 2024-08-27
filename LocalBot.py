@@ -83,7 +83,6 @@ async def send_response(ctx, message):
         await ctx.respond(message)
     else:
         await ctx.reply(message)
-    print(f"Response: {message}")
     return message        
 
 
@@ -121,7 +120,6 @@ async def generate_chat_completion(
         memory=conversation_memory[context_key],
         verbose=False,
     )
-    print(f"Conversation memory: {conversation.memory}")
 
     response = conversation.predict(human_input=prompt)
     if "<tool_call>" in response and "</tool_call>" in response:
@@ -325,7 +323,7 @@ async def chat(ctx, *, message):
                 channel_id=channel_id,
                 user_id=user_id,
             )
-            print(f"Chat response: {response}")
+
 
             if "<tool_call>" in response:
                 return
