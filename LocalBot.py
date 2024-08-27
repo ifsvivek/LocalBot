@@ -84,7 +84,7 @@ async def send_response(ctx, message):
         await ctx.respond(message)
     else:
         await ctx.reply(message)
-    return message        
+    return message
 
 
 async def generate_chat_completion(
@@ -152,9 +152,6 @@ async def handle_tool_call(ctx, response, memory):
             "flip": lambda: flip(ctx),
             "ask": lambda: ask(ctx, question=tool_arguments.get("question")),
             "purge": lambda: purge(ctx, amount=tool_arguments.get("amount")),
-            "play": lambda: play(ctx, query=tool_arguments.get("query")),
-            "stop": lambda: stop(ctx),
-            "lyrics": lambda: lyrics(ctx, song_name=tool_arguments.get("song_name")),
         }
 
         action = tool_actions.get(
@@ -163,14 +160,13 @@ async def handle_tool_call(ctx, response, memory):
         result = await action()
 
         if result is not None:
-            # Find the last message and update it
             memory.chat_memory.messages[-1].content += f"\nResult: {result}"
     except Exception as e:
         await send_response(
             ctx, f"An error occurred while processing the tool call: {e}"
         )
 
-    return memory.chat_memory.messages[-1].content 
+    return memory.chat_memory.messages[-1].content
 
 
 async def generate_image(
@@ -324,7 +320,6 @@ async def chat(ctx, *, message):
                 channel_id=channel_id,
                 user_id=user_id,
             )
-
 
             if "<tool_call>" in response:
                 return
@@ -502,51 +497,35 @@ async def play_song(ctx, info, filename):
     await ctx.followup.send(f'Now playing: {info["title"]}')
 
 
-import logging
-
 @bot.slash_command(description="Play a song or playlist from YouTube.")
 async def play(ctx, *, query):
-    logging.info("Received play command with query: %s", query)
     state = await get_server_state(ctx.guild.id)
-
     if not ctx.voice_client:
-        logging.info("Bot is not in a voice channel, attempting to join.")
         await join(ctx)
-
     ydl = youtube_dl.YoutubeDL(ytdl_format_options)
 
     if "http" in query:
         url = query
     else:
         url = f"ytsearch:{query}"
-
     try:
-        logging.info("Extracting info from URL: %s", url)
         info = ydl.extract_info(url, download=True)
         if "entries" in info:
             for entry in info["entries"]:
                 filename = ydl.prepare_filename(entry)
                 state["playlist_queue"].append({"info": entry, "filename": filename})
-                logging.info("Added entry to playlist queue: %s", entry["title"])
         else:
             filename = ydl.prepare_filename(info)
             state["playlist_queue"].append({"info": info, "filename": filename})
-            logging.info("Added single video to playlist queue: %s", info["title"])
-
     except Exception as e:
-        logging.error("Error extracting info: %s", str(e))
         await ctx.followup.send(f"Error: {str(e)}")
         return
-
     if not state["current_song"]:
-        logging.info("No current song, playing next song in queue.")
         next_song = state["playlist_queue"].pop(0)
         try:
             await play_song(ctx, next_song["info"], next_song["filename"])
             state["current_song"] = next_song
-            logging.info("Started playing song: %s", next_song["info"]["title"])
         except Exception as e:
-            logging.error("Error playing song: %s", str(e))
             await ctx.followup.send(f"Error playing song: {str(e)}")
 
 
