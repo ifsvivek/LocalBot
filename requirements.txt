@@ -1,11 +1,13 @@
 py-cord
 discord.py
 python-dotenv
-requests
+aiohttp
 yt_dlp
 pillow
 lyricsgenius
 diffusers
-groq
+langchain
+langchain-core
+langchain-groq
 accelerate
 transformers
