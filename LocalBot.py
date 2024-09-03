@@ -586,4 +586,14 @@ async def clear_history(ctx):
         await ctx.send("You do not have permission to clear the conversation history.")
 
 
+@bot.command(description="Pin a replied message.")
+async def pin(ctx):
+    if ctx.message.reference:
+        referenced_message = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+        await referenced_message.pin()
+        await ctx.send("Message pinned successfully.")
+    else:
+        await ctx.send("Please reply to the message you want to pin.")
+
+
 bot.run(TOKEN)
