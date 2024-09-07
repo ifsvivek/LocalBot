@@ -1,4 +1,4 @@
-import os, time, random, asyncio, aiohttp, json, subprocess, lyricsgenius, discord, base64
+import os, time, random, asyncio, aiohttp, json, subprocess, lyricsgenius, discord, base64, wolframalpha
 from discord.ext import commands, tasks
 import yt_dlp as youtube_dl
 from PIL import Image
@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 GENIUS_TOKEN = os.getenv("GENIUS_TOKEN")
+WOLF = os.getenv("WOLF")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -55,6 +56,7 @@ imagine [prompt]: Generate an image based on a prompt.
 purge [amount]: Delete messages (requires Manage Messages).
 clear [amount]: Clear messages in DM.
 flux [prompt]: Generate an image using Flux.
+calculate [query]: Calculate using WolframAlpha.
 
 END OF SYSTEM MESSAGE
 """
@@ -85,6 +87,15 @@ async def send_response(ctx, message):
     else:
         await ctx.reply(message)
     return message
+
+
+def calculate(query):
+    client = wolframalpha.Client(WOLF)
+    res = client.query(query)
+    if res["@success"] == "true":
+        return next(res.results).text
+    else:
+        return "Query was not successful."
 
 
 async def generate_chat_completion(
@@ -152,6 +163,7 @@ async def handle_tool_call(ctx, response, memory):
             "flip": lambda: flip(ctx),
             "ask": lambda: ask(ctx, question=tool_arguments.get("question")),
             "purge": lambda: purge(ctx, amount=tool_arguments.get("amount")),
+            "calculate": lambda: calculate(tool_arguments.get("query")),
         }
 
         action = tool_actions.get(
