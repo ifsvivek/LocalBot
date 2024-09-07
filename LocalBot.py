@@ -89,13 +89,15 @@ async def send_response(ctx, message):
     return message
 
 
-def calculate(query):
+async def calculate(ctx, query):
     client = wolframalpha.Client(WOLF)
-    res = client.query(query)
-    if res["@success"] == "true":
+    loop = asyncio.get_running_loop()
+    try:
+        res = await loop.run_in_executor(None, client.query, query)
+        await send_response(ctx, next(res.results).text)
         return next(res.results).text
-    else:
-        return "Query was not successful."
+    except Exception as e:
+        return "An error occurred while calculating"
 
 
 async def generate_chat_completion(
@@ -163,7 +165,7 @@ async def handle_tool_call(ctx, response, memory):
             "flip": lambda: flip(ctx),
             "ask": lambda: ask(ctx, question=tool_arguments.get("question")),
             "purge": lambda: purge(ctx, amount=tool_arguments.get("amount")),
-            "calculate": lambda: calculate(tool_arguments.get("query")),
+            "calculate": lambda: calculate(ctx, query=tool_arguments.get("query")),
         }
 
         action = tool_actions.get(
