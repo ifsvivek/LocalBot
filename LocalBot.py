@@ -589,7 +589,9 @@ async def clear_history(ctx):
 @bot.command(description="Pin a replied message.")
 async def pin(ctx):
     if ctx.message.reference:
-        referenced_message = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+        referenced_message = await ctx.channel.fetch_message(
+            ctx.message.reference.message_id
+        )
         await referenced_message.pin()
         await ctx.send("Message pinned successfully.")
     else:
