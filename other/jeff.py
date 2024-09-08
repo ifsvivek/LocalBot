@@ -1,57 +1,74 @@
-import discord, os, asyncio, requests
+import discord, os
 from discord.ext import commands
+from typing import Union
+from langchain.chains import LLMChain
+from langchain_core.prompts import (
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+    MessagesPlaceholder,
+)
+from langchain_core.messages import SystemMessage
+from langchain.chains.conversation.memory import ConversationBufferWindowMemory
+from langchain_groq import ChatGroq
 from dotenv import load_dotenv
-from langchain import LLMChain
-from langchain.prompts import PromptTemplate
-from langchain.llms.base import LLM
-from typing import Optional
+
 
 load_dotenv()
 TOKEN = os.getenv("JEFF")
+
 
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-conversation_history = {}
-
-
-class MistralLLM(LLM):
-    url = "http://localhost:11434/api/generate"
-
-    @property
-    def _llm_type(self) -> str:
-        return "mistral-nemo"
-
-    def _call(self, prompt: str, stop: Optional[list] = None, **kwargs) -> str:
-        return asyncio.run(self._acall(prompt, stop=stop, **kwargs))
-
-    async def _acall(self, prompt: str, stop: Optional[list] = None, **kwargs) -> str:
-        headers = {"Content-Type": "application/json"}
-        data = {"model": "mistral-nemo:latest", "prompt": prompt, "stream": False}
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None, lambda: requests.post(self.url, headers=headers, json=data)
-        )
-        return response.json()["response"]
-
-
-template = """
+conversation_memory = {}
+system_prompt = """
 You are chatting with Jeff, a friendly bot who loves to chat about anything and everything.
 If anyone ask who are you, you can say:
 "MY NAME IS JEFF"
 
-Here is the conversation history:
-{history}
+"""
 
-Respond to the following prompt:
-{Username}:{input}"""
-prompt_template = PromptTemplate(
-    input_variables=["history", "Username", "input"],
-    template=template,
-)
-mistral_llm = MistralLLM()
-llm_chain = LLMChain(llm=mistral_llm, prompt=prompt_template)
+
+async def generate_chat_completion(
+    server_id: Union[str, None],
+    channel_id: str,
+    user_id: str,
+    prompt: str,
+    username: str,
+) -> Union[str, None]:
+    groq_api_key = os.environ.get("GT_KEY")
+    model_name = "llama3-groq-70b-8192-tool-use-preview"
+
+    groq_chat = ChatGroq(groq_api_key=groq_api_key, model_name=model_name)
+    context_key = server_id if server_id is not None else f"DM-{channel_id}-{user_id}"
+
+    global conversation_memory
+    if "conversation_memory" not in globals():
+        conversation_memory = {}
+    if context_key not in conversation_memory:
+        conversation_memory[context_key] = ConversationBufferWindowMemory(
+            k=10, memory_key="chat_history", return_messages=True
+        )
+
+    prompt_template = ChatPromptTemplate.from_messages(
+        [
+            SystemMessage(content=system_prompt),
+            MessagesPlaceholder(variable_name="chat_history"),
+            HumanMessagePromptTemplate.from_template(f"{username}: {{human_input}}"),
+        ]
+    )
+    conversation = LLMChain(
+        llm=groq_chat,
+        prompt=prompt_template,
+        memory=conversation_memory[context_key],
+        verbose=False,
+    )
+
+    response = conversation.predict(human_input=prompt)
+    if "<tool_call>" in response and "</tool_call>" in response:
+        response = "Failed to generate"
+    return response
 
 
 @bot.event
@@ -69,20 +86,22 @@ async def on_message(message):
 
 
 async def chat(ctx, *, message):
-    channel_id = ctx.channel.id
-    user_name = ctx.author.display_name
-    if channel_id not in conversation_history:
-        conversation_history[channel_id] = []
-    conversation_history[channel_id].append(f"{user_name}: {message}")
-    history = "\n".join(conversation_history[channel_id])
-
     async with ctx.typing():
         try:
-            response = await llm_chain.arun(
-                history=history, Username=user_name, input=message
+            server_id = str(ctx.guild.id) if ctx.guild else None
+            channel_id = str(ctx.channel.id)
+            user_id = str(ctx.author.id)
+            username = ctx.author.display_name
+
+            response = await generate_chat_completion(
+                prompt=message,
+                server_id=server_id,
+                channel_id=channel_id,
+                user_id=user_id,
+                username=username,
             )
             response = response.strip("Jeff:").strip()
-            conversation_history[channel_id].append(f"Jeff: {response}")
+
             if len(response) > 2000:
                 is_first_chunk = True
                 while response:
@@ -98,9 +117,10 @@ async def chat(ctx, *, message):
                         await ctx.send(chunk)
             else:
                 await ctx.reply(response)
+
         except Exception as e:
-            print(f"\n\nError: {e}\n\n")
-            await ctx.reply("Sorry, I am unable to respond at the moment.")
+            print(f"Error: {e}")
+            await ctx.reply("Failed to generate")
 
 
 bot.run(TOKEN)
