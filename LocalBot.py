@@ -338,18 +338,21 @@ async def chat(ctx, *, message):
             if "<tool_call>" in response:
                 return
 
-            is_first_chunk = True
-            while response:
-                split_at = (response[:2000].rfind("\n") + 1) or 2000
-                chunk, response = (
-                    response[:split_at].strip(),
-                    response[split_at:].strip(),
-                )
-                if is_first_chunk:
-                    await send_response(ctx, chunk)
-                    is_first_chunk = False
-                else:
-                    await ctx.send(chunk)
+            if len(response) > 2000:
+                is_first_chunk = True
+                while response:
+                    split_at = (response[:2000].rfind("\n") + 1) or 2000
+                    chunk, response = (
+                        response[:split_at].strip(),
+                        response[split_at:].strip(),
+                    )
+                    if is_first_chunk:
+                        await ctx.reply(chunk)
+                        is_first_chunk = False
+                    else:
+                        await ctx.send(chunk)
+            else:
+                await ctx.reply(response)
 
         except Exception as e:
             print(f"Error: {e}")
