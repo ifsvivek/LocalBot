@@ -13,6 +13,8 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+conversation_history = {}
+
 
 class MistralLLM(LLM):
     url = "http://localhost:11434/api/generate"
@@ -39,11 +41,13 @@ You are chatting with Jeff, a friendly bot who loves to chat about anything and 
 If anyone ask who are you, you can say:
 "MY NAME IS JEFF"
 
+Here is the conversation history:
+{history}
 
 Respond to the following prompt:
-{input}"""
+{Username}:{input}"""
 prompt_template = PromptTemplate(
-    input_variables=["input"],
+    input_variables=["history", "Username", "input"],
     template=template,
 )
 mistral_llm = MistralLLM()
@@ -65,9 +69,20 @@ async def on_message(message):
 
 
 async def chat(ctx, *, message):
+    channel_id = ctx.channel.id
+    user_name = ctx.author.name
+    if channel_id not in conversation_history:
+        conversation_history[channel_id] = []
+    conversation_history[channel_id].append(f"{user_name}: {message}")
+    history = "\n".join(conversation_history[channel_id])
+
     async with ctx.typing():
         try:
-            response = await llm_chain.arun(input=message)
+            response = await llm_chain.arun(
+                history=history, Username=user_name, input=message
+            )
+            response = response.strip("Jeff:").strip()
+            conversation_history[channel_id].append(f"Jeff: {response}")
             if len(response) > 2000:
                 is_first_chunk = True
                 while response:
