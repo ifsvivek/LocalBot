@@ -70,7 +70,7 @@ async def on_message(message):
 
 async def chat(ctx, *, message):
     channel_id = ctx.channel.id
-    user_name = ctx.author.name
+    user_name = ctx.author.display_name
     if channel_id not in conversation_history:
         conversation_history[channel_id] = []
     conversation_history[channel_id].append(f"{user_name}: {message}")
