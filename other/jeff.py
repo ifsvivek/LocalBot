@@ -67,7 +67,7 @@ async def generate_chat_completion(
 
     response = conversation.predict(human_input=prompt)
     if "<tool_call>" in response and "</tool_call>" in response:
-        response = "Failed to generate"
+        response = "MY NAME IS JEFF"
     return response
 
 
@@ -120,7 +120,14 @@ async def chat(ctx, *, message):
 
         except Exception as e:
             print(f"Error: {e}")
-            await ctx.reply("Failed to generate")
+            await ctx.reply("MY NAME IS JEFF")
+
+
+@bot.command()
+async def jeff(ctx):
+    global conversation_memory
+    conversation_memory = {}
+    await ctx.send("MY NAME IS JEFF")
 
 
 bot.run(TOKEN)
