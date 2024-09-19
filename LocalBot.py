@@ -1,4 +1,4 @@
-import os, time, random, asyncio, aiohttp, json, subprocess, lyricsgenius, discord, base64, wolframalpha
+import os, time, random, asyncio, aiohttp, json, lyricsgenius, discord, base64, wolframalpha
 from discord.ext import commands, tasks
 import yt_dlp as youtube_dl
 from PIL import Image
@@ -55,7 +55,6 @@ chat [message]: Chat with the bot.
 imagine [prompt]: Generate an image based on a prompt.
 purge [amount]: Delete messages (requires Manage Messages).
 clear [amount]: Clear messages in DM.
-flux [prompt]: Generate an image using Flux.
 calculate [query]: Calculate using WolframAlpha.
 
 END OF SYSTEM MESSAGE
@@ -156,7 +155,6 @@ async def handle_tool_call(ctx, response, memory):
 
         tool_actions = {
             "imagine": lambda: imagine(ctx, prompt=tool_arguments.get("prompt")),
-            "flux": lambda: flux(ctx, prompt=tool_arguments.get("prompt")),
             "cat": lambda: cat(ctx),
             "dog": lambda: dog(ctx),
             "gtn": lambda: gtn(ctx),
@@ -380,51 +378,6 @@ async def imagine(ctx, *, prompt: str) -> None:
         time_taken = time.time() - start_time
 
         if image_path:
-            embed_title = prompt[:253] + "..." if len(prompt) > 256 else prompt
-            embed = discord.Embed(title=embed_title, color=0x00FF00)
-            embed.set_image(url=f"attachment://{os.path.basename(image_path)}")
-            embed.set_footer(text=f"Time taken: {time_taken:.2f}s")
-            await edit_message(
-                initial_message,
-                content=None,
-                embed=embed,
-                file=discord.File(image_path),
-            )
-            if os.path.exists(image_path):
-                os.remove(image_path)
-        else:
-            await edit_message(initial_message, content="Failed to generate image.")
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        if hasattr(ctx, "respond"):
-            await ctx.respond("An error occurred while generating the image.")
-        else:
-            await ctx.reply("An error occurred while generating the image.")
-
-
-@bot.slash_command(description="Generate an image based on a prompt.")
-async def flux(ctx, *, prompt):
-    async def send_initial_message():
-        if hasattr(ctx, "respond"):
-            return await ctx.respond("Generating image, please wait...")
-        else:
-            return await ctx.reply("Generating image, please wait...")
-
-    async def edit_message(initial_message, content=None, embed=None, file=None):
-        await initial_message.edit(content=content, embed=embed, file=file)
-
-    try:
-        initial_message = await send_initial_message()
-
-        start_time = time.time()
-        result = subprocess.run(
-            [".venv/bin/python", "genflux.py", prompt], capture_output=True, text=True
-        )
-        end_time = time.time()
-        time_taken = end_time - start_time
-
-        if result.returncode == 0:
-            image_path = "img/flux-dev.png"
             embed_title = prompt[:253] + "..." if len(prompt) > 256 else prompt
             embed = discord.Embed(title=embed_title, color=0x00FF00)
             embed.set_image(url=f"attachment://{os.path.basename(image_path)}")
