@@ -110,6 +110,7 @@ async def generate_chat_completion(
     channel_id: str,
     user_id: str,
     prompt: str,
+    image_base64: Optional[str] = None,
 ) -> Union[str, None]:
     groq_api_key = os.environ.get("GROQ_API_KEY")
     model_name = "llama-3.2-90b-text-preview"
@@ -139,7 +140,19 @@ async def generate_chat_completion(
         verbose=False,
     )
 
-    response = conversation.predict(human_input=prompt)
+    if image_base64:
+        response = conversation.predict(
+            human_input={
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": image_base64}},
+                ],
+            }
+        )
+    else:
+        response = conversation.predict(human_input=prompt)
+
     if "<tool_call>" in response and "</tool_call>" in response:
         response = await handle_tool_call(
             ctx, response, conversation_memory[context_key]
@@ -226,15 +239,47 @@ async def on_ready():
     clear_history_loop.start()
 
 
+async def fetch_image_as_base64(url):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status == 200:
+                image_data = await response.read()
+                return base64.b64encode(image_data).decode('utf-8')
+            else:
+                return None
+
 @bot.event
 async def on_message(message):
     if bot.user.mentioned_in(message) and not message.author.bot:
         ctx = await bot.get_context(message)
-        await chat(
-            ctx, message=message.content.replace(f"<@{bot.user.id}>", "").strip()
-        )
+        image_url = None
+
+        # Check if the message contains an image
+        if message.attachments:
+            for attachment in message.attachments:
+                if attachment.content_type.startswith("image/"):
+                    image_url = attachment.url
+                    break
+
+        if image_url:
+            base64_image = await fetch_image_as_base64(image_url)
+            if base64_image:
+                response = await generate_chat_completion(
+                    ctx=ctx,
+                    prompt=f"What's in this image?",
+                    server_id=str(ctx.guild.id) if ctx.guild else None,
+                    channel_id=str(ctx.channel.id),
+                    user_id=str(ctx.author.id),
+                    image_base64=base64_image
+                )
+                await ctx.reply(response)
+        else:
+            await chat(
+                ctx, message=message.content.replace(f"<@{bot.user.id}>", "").strip()
+            )
     else:
         await bot.process_commands(message)
+
 
 
 @bot.slash_command(description="Send a picture of a cat.")
