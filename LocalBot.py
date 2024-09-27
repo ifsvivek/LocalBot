@@ -64,7 +64,6 @@ imagine [prompt]: Generate an image based on a prompt.
 purge [amount]: Delete messages (requires Manage Messages).
 clear [amount]: Clear messages in DM.
 calculate [query]: Calculate using WolframAlpha, you can check anything such as weather, math, etc.
-google [query]: Search Google and return the top result.
 
 
 END OF SYSTEM MESSAGE
@@ -107,33 +106,6 @@ async def calculate(ctx, query):
         return next(res.results).text
     except Exception as e:
         return "An error occurred while calculating"
-
-
-async def google_search(ctx, query):
-    encoded_query = urllib.parse.quote(query)
-    url = f"https://www.googleapis.com/customsearch/v1?q={encoded_query}&key={GOOGLE}&cx={CSE_ID}"
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    search_results = data.get("items", [])
-                    if search_results:
-                        snippet = search_results[0].get(
-                            "snippet", "No description available."
-                        )
-                        await send_response(ctx, snippet)
-                        return snippet
-                    else:
-                        await send_response(ctx, "No results found.")
-                        return "No results found."
-                else:
-                    await send_response(ctx, "Error fetching search results.")
-                    return "Error fetching search results."
-    except Exception as e:
-        await send_response(ctx, f"An error occurred: {str(e)}")
-        return f"An error occurred: {str(e)}"
 
 
 async def generate_chat_completion(
@@ -201,7 +173,6 @@ async def handle_tool_call(ctx, response, memory):
             "ask": lambda: ask(ctx, question=tool_arguments.get("question")),
             "purge": lambda: purge(ctx, amount=int(tool_arguments.get("amount", 5))),
             "calculate": lambda: calculate(ctx, query=tool_arguments.get("query")),
-            "google": lambda: google_search(ctx, query=tool_arguments.get("query")),
         }
 
         action = tool_actions.get(
