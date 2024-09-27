@@ -1,5 +1,5 @@
 import os, time, random, asyncio, aiohttp, json, lyricsgenius, discord, base64, wolframalpha, urllib.parse
-from discord.ext import commands, tasks
+from discord.ext import commands
 import yt_dlp as youtube_dl
 from PIL import Image
 from io import BytesIO
