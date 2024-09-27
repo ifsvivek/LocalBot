@@ -1,5 +1,5 @@
-import os, time, random, asyncio, aiohttp, json, lyricsgenius, discord, base64, wolframalpha, urllib.parse
-from discord.ext import commands
+import os, time, random, asyncio, aiohttp, json, lyricsgenius, discord, base64, wolframalpha
+from discord.ext import commands, tasks
 import yt_dlp as youtube_dl
 from PIL import Image
 from io import BytesIO
@@ -19,8 +19,6 @@ load_dotenv()
 TOKEN = os.getenv("TOKEN")
 GENIUS_TOKEN = os.getenv("GENIUS_TOKEN")
 WOLF = os.getenv("WOLF")
-GOOGLE = os.getenv("GOOGLE")
-CSE_ID = os.getenv("CSE_ID")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -128,7 +126,6 @@ async def generate_chat_completion(
         conversation_memory[context_key] = ConversationBufferWindowMemory(
             k=10, memory_key="chat_history", return_messages=True
         )
-    print(conversation_memory[context_key])
     prompt_template = ChatPromptTemplate.from_messages(
         [
             SystemMessage(content=system_prompt),
@@ -221,12 +218,28 @@ async def generate_image(
                 return None
 
 
+statuses = [
+    discord.Game("Chatting with humans 🤗"),
+    discord.Game("Generating images on demand 🎨"),
+    discord.Game("Playing tunes from YouTube 🎵"),
+    discord.Game("Just hanging out, say hi! 👋"),
+    discord.Game("Your local chat buddy 🤝"),
+    discord.Game("Learning and improving every day 📚"),
+    discord.Game("24/7 chat support 🕒"),
+    discord.Game("LocalBot at your service 🤖"),
+    discord.Game("Running on procrastination and caffeine ☕️"),
+]
+
+
+@tasks.loop(minutes=1.0)
+async def change_status(bot):
+    await bot.change_presence(activity=random.choice(statuses))
+
+
 @bot.event
 async def on_ready():
     print(f"{bot.user} is ready and online!")
-    await bot.change_presence(
-        activity=discord.Game(name="Running on procrastination and caffeine")
-    )
+    change_status.start(bot)
 
 
 @bot.event
