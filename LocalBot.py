@@ -1,4 +1,4 @@
-import os, time, random, asyncio, aiohttp, json, lyricsgenius, discord, base64, wolframalpha
+import os, time, random, asyncio, aiohttp, json, lyricsgenius, discord, base64, wolframalpha, urllib.parse
 from discord.ext import commands, tasks
 import yt_dlp as youtube_dl
 from PIL import Image
@@ -19,6 +19,8 @@ load_dotenv()
 TOKEN = os.getenv("TOKEN")
 GENIUS_TOKEN = os.getenv("GENIUS_TOKEN")
 WOLF = os.getenv("WOLF")
+GOOGLE = os.getenv("GOOGLE")
+CSE_ID = os.getenv("CSE_ID")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -48,7 +50,8 @@ You are provided with function signatures within <tools></tools> XML tags. You m
 {"name": <function-name>,"arguments": <args-dict>}
 </tool_call>
 
-Use tool calls to run commands:
+Use tool calls to run only these commands and do not run any other commands. If you need to run a different command, please ask for permission:
+
 cat: Random cat image.
 dog: Random dog image.
 gtn: Number guessing game.
@@ -61,6 +64,8 @@ imagine [prompt]: Generate an image based on a prompt.
 purge [amount]: Delete messages (requires Manage Messages).
 clear [amount]: Clear messages in DM.
 calculate [query]: Calculate using WolframAlpha, you can check anything such as weather, math, etc.
+google [query]: Search Google and return the top result.
+
 
 END OF SYSTEM MESSAGE
 """
@@ -104,6 +109,33 @@ async def calculate(ctx, query):
         return "An error occurred while calculating"
 
 
+async def google_search(ctx, query):
+    encoded_query = urllib.parse.quote(query)
+    url = f"https://www.googleapis.com/customsearch/v1?q={encoded_query}&key={GOOGLE}&cx={CSE_ID}"
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    search_results = data.get("items", [])
+                    if search_results:
+                        snippet = search_results[0].get(
+                            "snippet", "No description available."
+                        )
+                        await send_response(ctx, snippet)
+                        return snippet
+                    else:
+                        await send_response(ctx, "No results found.")
+                        return "No results found."
+                else:
+                    await send_response(ctx, "Error fetching search results.")
+                    return "Error fetching search results."
+    except Exception as e:
+        await send_response(ctx, f"An error occurred: {str(e)}")
+        return f"An error occurred: {str(e)}"
+
+
 async def generate_chat_completion(
     ctx,
     server_id: Union[str, None],
@@ -124,7 +156,7 @@ async def generate_chat_completion(
         conversation_memory[context_key] = ConversationBufferWindowMemory(
             k=10, memory_key="chat_history", return_messages=True
         )
-
+    print(conversation_memory[context_key])
     prompt_template = ChatPromptTemplate.from_messages(
         [
             SystemMessage(content=system_prompt),
@@ -167,8 +199,9 @@ async def handle_tool_call(ctx, response, memory):
             "dice": lambda: dice(ctx, sides=tool_arguments.get("sides", 6)),
             "flip": lambda: flip(ctx),
             "ask": lambda: ask(ctx, question=tool_arguments.get("question")),
-            "purge": lambda: purge(ctx, amount=tool_arguments.get("amount")),
+            "purge": lambda: purge(ctx, amount=int(tool_arguments.get("amount", 5))),
             "calculate": lambda: calculate(ctx, query=tool_arguments.get("query")),
+            "google": lambda: google_search(ctx, query=tool_arguments.get("query")),
         }
 
         action = tool_actions.get(
@@ -223,7 +256,6 @@ async def on_ready():
     await bot.change_presence(
         activity=discord.Game(name="Running on procrastination and caffeine")
     )
-    clear_history_loop.start()
 
 
 @bot.event
@@ -542,13 +574,6 @@ async def lyrics(ctx, *, song_name: str = None):
             await ctx.followup.send(f"Lyrics for '{search_title}' not found.")
     except Exception as e:
         await ctx.followup.send(f"Error: {str(e)}")
-
-
-@tasks.loop(hours=3)
-async def clear_history_loop():
-    global conversation_memory
-    conversation_memory.clear()
-    print("Conversation history cleared automatically.")
 
 
 @bot.command(description="Clear the conversation history.")
