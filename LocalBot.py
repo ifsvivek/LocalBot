@@ -60,6 +60,7 @@ imagine [prompt]: Generate an image based on a prompt.
 purge [amount]: Delete messages (requires Manage Messages).
 clear [amount]: Clear messages in DM.
 calculate [query]: Calculate using WolframAlpha. I can check anything such as weather, math, time, and date.
+gt : Send pic of GT
 
 Here are some specific capabilities of the WolframAlpha function:
 
@@ -342,6 +343,12 @@ async def dog(ctx):
                 return image_url
             else:
                 await send_response(ctx, "Failed to fetch dog image.")
+
+
+@bot.slash_command(description="Send a picture of GT.")
+async def gt(ctx):
+    await send_response(ctx, "https://imgur.com/a/HlM60jA")
+    return "https://imgur.com/a/HlM60jA"
 
 
 @bot.slash_command(description="Game: Guess the number between 1 and 10.")
