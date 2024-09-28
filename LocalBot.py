@@ -184,6 +184,7 @@ async def handle_tool_call(ctx, response, memory):
             "ask": lambda: ask(ctx, question=tool_arguments.get("question")),
             "purge": lambda: purge(ctx, amount=int(tool_arguments.get("amount", 5))),
             "calculate": lambda: calculate(ctx, query=tool_arguments.get("query")),
+            "gt": lambda: gt(ctx),
         }
 
         action = tool_actions.get(
