@@ -14,6 +14,7 @@ from langchain_core.messages import SystemMessage
 from langchain.chains.conversation.memory import ConversationBufferWindowMemory
 from langchain_groq import ChatGroq
 from dotenv import load_dotenv
+from groq import Groq
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -63,6 +64,8 @@ purge [amount]: Delete messages (requires Manage Messages).
 clear [amount]: Clear messages in DM.
 calculate [query]: Calculate using WolframAlpha, you can check anything such as weather, math, etc.
 
+if a message has 'response from vision function' in it, then the message is from the vision function.
+you need read the user message and then respnse from it and then reply to the user basically you need to parse the message and then reply to the user.
 
 END OF SYSTEM MESSAGE
 """
@@ -187,6 +190,34 @@ async def handle_tool_call(ctx, response, memory):
     return memory.chat_memory.messages[-1].content
 
 
+async def vision(message, image_url):
+    try:
+        groq_api_key = os.environ.get("GROQ_API_KEY")
+        client = Groq(api_key=groq_api_key)
+        completion = client.chat.completions.create(
+            model="llama-3.2-11b-vision-preview",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": message},
+                        {"type": "image_url", "image_url": {"url": image_url}},
+                    ],
+                },
+                {"role": "assistant", "content": ""},
+            ],
+            temperature=1,
+            max_tokens=1024,
+            top_p=1,
+            stream=False,
+            stop=None,
+        )
+        vision_response = completion.choices[0].message.content
+        return vision_response
+    except Exception as e:
+        return "An error occurred while processing the image."
+
+
 async def generate_image(
     prompt: str,
 ) -> Optional[str]:
@@ -246,6 +277,26 @@ async def on_ready():
 async def on_message(message):
     if bot.user.mentioned_in(message) and not message.author.bot:
         ctx = await bot.get_context(message)
+        if message.reference and message.reference.message_id:
+            referenced_message = await message.channel.fetch_message(
+                message.reference.message_id
+            )
+            if referenced_message.attachments:
+                for attachment in referenced_message.attachments:
+                    if attachment.content_type.startswith("image/"):
+                        image_url = attachment.url
+                        user_message = message.content.replace(
+                            f"<@{bot.user.id}>", ""
+                        ).strip()
+                        vision_response = await vision(user_message, image_url)
+                        vision_response = (
+                            "Human message: "
+                            + user_message
+                            + "\nresponse from vision function: "
+                            + vision_response
+                        )
+                        await chat(ctx, message=vision_response)
+                        return
         await chat(
             ctx, message=message.content.replace(f"<@{bot.user.id}>", "").strip()
         )
@@ -286,7 +337,6 @@ async def dog(ctx):
 @bot.slash_command(description="Game: Guess the number between 1 and 10.")
 async def gtn(ctx):
     secret_number = random.randint(1, 10)
-    print("Secret Number:", secret_number)
     await send_response(ctx, "Guess a number between 1 and 10.")
 
     def check(message):
@@ -374,7 +424,6 @@ async def chat(ctx, *, message):
                 await ctx.reply(response)
 
         except Exception as e:
-            print(f"Error: {e}")
             await send_response(ctx, f"An error occurred: {e}")
 
 
@@ -414,7 +463,7 @@ async def imagine(ctx, *, prompt: str) -> None:
         else:
             await edit_message(initial_message, content="Failed to generate image.")
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"Error generating image: {e}")
         if hasattr(ctx, "respond"):
             await ctx.respond("An error occurred while generating the image.")
         else:
@@ -469,8 +518,7 @@ async def after_playback(err, ctx):
     if os.path.exists(state["current_song"]["filename"]):
         os.remove(state["current_song"]["filename"])
     if err:
-        print(f"Error: {err}")
-
+        print(f"Playback error: {err}")
     if state["playlist_queue"]:
         next_song = state["playlist_queue"].pop(0)
         await play_song(ctx, next_song["info"], next_song["filename"])
