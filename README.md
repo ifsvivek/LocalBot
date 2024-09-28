@@ -1,61 +1,88 @@
-## Description
-This Discord bot is a fun and interactive bot that provides various commands to users within a Discord server. It includes features such as ping testing, cat and dog images, dice rolling, number guessing game, coin flipping, chatting with the bot, and generating images based on prompts.
+# LocalBot
+
+LocalBot is a versatile Discord bot designed to chat with users, generate images based on prompts, play songs from YouTube, and fetch song lyrics. It also includes various fun commands like rolling dice, flipping coins, and more.
+
+## Features
+
+- **Chat with Users**: Engage in conversations with users.
+- **Image Generation**: Generate images based on user prompts.
+- **Music Playback**: Play songs from YouTube and fetch lyrics.
+- **Fun Commands**: Includes commands like rolling dice, flipping coins, and guessing games.
+- **Moderation Tools**: Commands to delete messages and manage conversations.
 
 ## Installation
-1. Clone or download the repository to your local machine.
-2. Create a virtual environment by running `python -m venv venv` in your terminal.
-3. Activate the virtual environment by running `source venv/bin/activate` on Linux or `venv\Scripts\activate` on Windows.
-4. Install the required dependencies by running `pip install -r requirements.txt`.
-5. Create a `.env` file in the root directory of the project.
-6. Inside the `.env` file, add your Discord bot token in the following format:
+
+1. Clone the repository:
+    ```sh
+    git clone https://github.com/ifsvivek/LocalBot.git
+    cd LocalBot
     ```
-    TOKEN=your_discord_bot_token_here
-    GENIUS_TOKEN=your_genius_token_here
-    API_KEY=your_openwebui_token_here
-    SERVER_URL=your_openwebui_server_url_here
-    MODEL=model_name_here
+
+2. Create a virtual environment and activate it:
+    ```sh
+    python -m venv venv
+    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
     ```
-7. Ensure your bot has the necessary permissions in your Discord server.
-8. Run the bot script by executing `python LocalBot.py` or `python LocalBot_phone.py` in your terminal, depending on your use case.
-9. or use `nohup python3 LocalBot.py &` to run the bot in the background.
+
+3. Install the required dependencies:
+    ```sh
+    pip install -r requirements.txt
+    ```
+
+4. Create a `.env` file in the root directory and add your tokens:
+    ```env
+    TOKEN=your_discord_bot_token
+    GENIUS_TOKEN=your_genius_api_token
+    WOLF=your_wolframalpha_api_key
+    GROQ_API_KEY=your_groq_api_key
+    ```
 
 ## Usage
-Once the bot is running and connected to your Discord server, users can interact with it using various commands prefixed with `$`. The bot supports both traditional commands and slash commands for enhanced interaction within Discord.
 
-### Available Commands
+Run the bot:
+```sh
+python LocalBot.py
+```
 
-| Command                                | Description                                                     | Options/Notes                                                                                                          |
-| -------------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `/cat` or `$cat`                       | Sends a random cat image.                                       |                                                                                                                        |
-| `/dog` or `$dog`                       | Sends a random dog image.                                       |                                                                                                                        |
-| `/gtn` or `$gtn`                       | Starts a number guessing game.                                  |                                                                                                                        |
-| `/hello` or `$hello`                   | Greets the user.                                                |                                                                                                                        |
-| `/dice [sides]` or `$dice [sides]`     | Rolls a dice with the specified number of sides.                | Default is 6 sides if none specified.                                                                                  |
-| `/flip` or `$flip`                     | Flips a coin.                                                   |                                                                                                                        |
-| `/ask` or `$ask`                       | Provides a yes/no response randomly.                            |                                                                                                                        |
-| `/chat [message]` or `$chat [message]` | Engages in a chat with the bot using the text-generation model. |                                                                                                                        |
-| `$imagine [prompt]`                    | Generates an image based on the provided prompt.                | `--magic`: Uses a magic prompt.<br>`--model`: Specify the model to use for image generation. Range: [0, 1, 2, 3, 4,5]. |
-| `/purge [amount]` or `$purge [amount]` | Deletes the specified number of messages in the channel.        | Requires the `Manage Messages` permission.                                                                             |
-| `$clear [amount]`                      | Clears the specified number of messages in the DM.              |                                                                                                                        |
-| `/join` or                             | Joins the voice channel of the user.                            |                                                                                                                        |
-| `/leave` or                            | Leaves the voice channel.                                       |                                                                                                                        |
-| `/play [song]` or                      | Plays the specified song in the voice channel.                  |                                                                                                                        |
-| `/stop` or                             | Stops the currently playing song.                               |                                                                                                                        |
-| `/lyrics `                             | Fetches the lyrics of the specified song.                       |                                                                                                                        |
+## Commands
+
+### Chat Commands
+
+- **Chat with the bot**: `$chat [message]`
+- **Generate an image**: `/imagine [prompt]`
+- **Get song lyrics**: `/lyrics [song_name]`
+
+### Fun Commands
+
+- **Send a picture of a cat**: `/cat`
+- **Send a picture of a dog**: `/dog`
+- **Guess the number game**: `/gtn`
+- **Say hello**: `/hello`
+- **Roll a dice**: `/dice [sides]`
+- **Flip a coin**: `/flip`
+- **Ask a yes/no question**: `/ask [question]`
+
+### Music Commands
+
+- **Play a song from YouTube**: `/play [query]`
+- **Stop the current playback**: `/stop`
+- **Join a voice channel**: `/join`
+- **Leave a voice channel**: `/leave`
+
+### Moderation Commands
+
+- **Delete messages**: `/purge [amount]`
+- **Clear bot messages in DM**: `$clear [amount]`
+- **Clear conversation history**: `$clear_history`
+- **Pin a replied message**: `$pin`
 
 ## Contributing
-Contributions to the project are welcome. If you have any suggestions, bug fixes, or additional features you'd like to implement, feel free to fork the repository, make your changes, and submit a pull request.
 
-## Dependencies
-- discord.py: For creating and managing the Discord bot.
-- python-dotenv: For managing environment variables.
-- requests: For making HTTP requests (used in some commands for fetching data).
-- py-cord: For supporting slash commands.
-- transformers: For text-generation capabilities in chat interactions.
-- lyricsgenius : For fetching song lyrics.
-- youtube_dl: For playing music in voice channels.
-- ffmpeg: For audio processing in voice channels.
-- Pillow: For image processing and generation.
+Contributions are welcome! Please fork the repository and submit a pull request.
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+This project is licensed under the MIT License. See the [`LICENSE`](./LICENSE) file for details.
+
+
+---
