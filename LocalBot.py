@@ -115,9 +115,9 @@ async def calculate(ctx, query):
     try:
         res = await loop.run_in_executor(None, client.query, query)
         await send_response(ctx, next(res.results).text)
-        return next(res.results).text
+        return json.dumps(res)
     except Exception as e:
-        return "An error occurred while calculating"
+        print(f"An error occurred: {e}")
 
 
 async def generate_chat_completion(
@@ -153,7 +153,6 @@ async def generate_chat_completion(
         memory=conversation_memory[context_key],
         verbose=False,
     )
-
     response = conversation.predict(human_input=prompt)
     if "<tool_call>" in response and "</tool_call>" in response:
         response = await handle_tool_call(
@@ -191,14 +190,13 @@ async def handle_tool_call(ctx, response, memory):
             tool_name, lambda: send_response(ctx, "Tool not found.")
         )
         result = await action()
-
+        print(f"Tool call result: {result}")
         if result is not None:
             memory.chat_memory.messages[-1].content += f"\nResult: {result}"
     except Exception as e:
         await send_response(
             ctx, f"An error occurred while processing the tool call: {e}"
         )
-
     return memory.chat_memory.messages[-1].content
 
 
