@@ -114,10 +114,26 @@ async def calculate(ctx, query):
     loop = asyncio.get_running_loop()
     try:
         res = await loop.run_in_executor(None, client.query, query)
-        await send_response(ctx, next(res.results).text)
-        return json.dumps(res)
+        result_texts = []
+        image_links = []
+        for pod in res.pods:
+            if "subpod" in pod:
+                subpods = (
+                    pod["subpod"]
+                    if isinstance(pod["subpod"], list)
+                    else [pod["subpod"]]
+                )
+                for subpod in subpods:
+                    if "plaintext" in subpod and subpod["plaintext"]:
+                        result_texts.append(subpod["plaintext"])
+                    if "img" in subpod and "@src" in subpod["img"]:
+                        image_links.append(subpod["img"]["@src"])
+        if result_texts:
+            await send_response(ctx, result_texts[1])
+        return json.dumps({"results": result_texts, "images": image_links})
     except Exception as e:
         print(f"An error occurred: {e}")
+        await send_response(ctx, "An error occurred while fetching the result.")
 
 
 async def generate_chat_completion(
@@ -190,7 +206,6 @@ async def handle_tool_call(ctx, response, memory):
             tool_name, lambda: send_response(ctx, "Tool not found.")
         )
         result = await action()
-        print(f"Tool call result: {result}")
         if result is not None:
             memory.chat_memory.messages[-1].content += f"\nResult: {result}"
     except Exception as e:
