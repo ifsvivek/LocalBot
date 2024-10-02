@@ -7,7 +7,6 @@ pillow
 lyricsgenius
 diffusers
 langchain
+langchain-community
 langchain-core
 langchain-groq
-accelerate
-transformers
