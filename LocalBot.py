@@ -1,5 +1,3 @@
-# localbot.py
-
 import os, time, random, asyncio, aiohttp, json, lyricsgenius, discord, base64, wolframalpha
 from discord.ext import commands, tasks
 import yt_dlp as youtube_dl
@@ -56,7 +54,7 @@ gtn: Number guessing game.
 hello: Greet the user.
 dice [sides]: Roll a dice (default 6 sides).
 flip: Coin flip.
-ask: Yes/no response.
+ask [question]: Answer a yes/no, maybe, definitely, or not likely question.
 chat [message]: Chat with the bot.
 imagine [prompt]: Generate an image based on a prompt.
 purge [amount]: Delete messages (requires Manage Messages).
@@ -416,7 +414,7 @@ async def flip(ctx):
 
 @bot.slash_command(description="Ask the bot a yes/no question.")
 async def ask(ctx, question: str):
-    result = random.choice(["Yes", "No"])
+    result = random.choice(['Yes', 'No', 'Maybe', 'Definitely', 'Not likely'])
     await send_response(ctx, f"Question: {question}\nAnswer: {result}")
     return f"Question: {question}\nAnswer: {result}"
 
