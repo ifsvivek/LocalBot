@@ -246,34 +246,34 @@ async def vision(message, image_url):
         return "An error occurred while processing the image."
 
 
-async def generate_image(
-    prompt: str,
-) -> Optional[str]:
+async def generate_image(prompt: str) -> Optional[str]:
     output_dir = "img"
     os.makedirs(output_dir, exist_ok=True)
 
-    url = "https://diffusion.ayushmanmuduli.com/gen"
-    params = {
-        "prompt": prompt,
-        "model_id": 5,
-        "use_refiner": 0,
-        "magic_prompt": 0,
-        "calc_metrics": 0,
-    }
+    url = "https://sd.ifsvivek.tech/sdapi/v1/txt2img"
+
+    params = {"prompt": prompt, "steps": 50, "sampler_index": "DPM++ 2M"}
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, params=params) as response:
+
+        async with session.post(url, json=params) as response:
             if response.status == 200:
+
                 data = await response.json()
-                base64_image_string = data["image"]
-                image_data = base64.b64decode(base64_image_string)
-                image = Image.open(BytesIO(image_data))
+                image_data = data.get("images", [])[0]
+
+                image_bytes = base64.b64decode(image_data)
+                image = Image.open(BytesIO(image_bytes))
                 timestamp = int(time.time())
                 image_path = os.path.join(output_dir, f"img_{timestamp}.png")
-                image.save(image_path)
-
-                return image_path
+                try:
+                    image.save(image_path)
+                    return image_path
+                except Exception as e:
+                    print(f"Error saving image: {e}")
+                    return None
             else:
+                print(f"Error: Received status code {response.status}")
                 return None
 
 
