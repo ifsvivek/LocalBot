@@ -417,7 +417,7 @@ async def flip(ctx):
 
 @bot.slash_command(description="Ask the bot a yes/no question.")
 async def ask(ctx, question: str):
-    result = random.choice(['Yes', 'No', 'Maybe', 'Definitely', 'Not likely'])
+    result = random.choice(["Yes", "No", "Maybe", "Definitely", "Not likely"])
     await send_response(ctx, f"Question: {question}\nAnswer: {result}")
     return f"Question: {question}\nAnswer: {result}"
 
