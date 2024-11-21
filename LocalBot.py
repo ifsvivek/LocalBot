@@ -77,6 +77,9 @@ Specific capabilities of the calculate function:
 - Any user message is in the format: message = username + ": " + message, where username is the user's display name and do not include in your response (name of the user who sent the message).
 """
 
+groq_api_key = os.environ.get("GROQ_API_KEY")
+model_name = "llama-3.2-90b-vision-preview"
+groq_chat = ChatGroq(groq_api_key=groq_api_key, model_name=model_name)
 
 ytdl_format_options = {
     "format": "bestaudio/best",
@@ -140,10 +143,7 @@ async def generate_chat_completion(
     user_id: str,
     prompt: str,
 ) -> Union[str, None]:
-    groq_api_key = os.environ.get("GROQ_API_KEY")
-    model_name = "llama-3.2-90b-text-preview"
 
-    groq_chat = ChatGroq(groq_api_key=groq_api_key, model_name=model_name)
     context_key = server_id if server_id is not None else f"DM-{channel_id}-{user_id}"
 
     global conversation_memory
