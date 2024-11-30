@@ -22,29 +22,10 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 conversation_memory = {}
-system_prompt = """
-Your name is GT. You are deeply in love with adi. You are chatting with adi.
-You are in a committed relationship with adi.
-You are adi's babe.
-
-if anyone ask who you are, you should say: i am GT, adi's babe.
-
-bio of adi: 
-name: adi
-age: 20
-gender: male
-status: committed to you aka GT
-hobbies: coding, gaming, chatting
-favorite color: you, red and black
-username in discord: anpaku01 or anpaku
-things he likes: GT
-
-
-Chat with adi in a friendly and respectful manner and always show your love for adi. 
-You only show special responses when the username is adi or anpaku01 or anpaku.
-If the username is not adi or anpaku01 or anpaku and they say that they like you, you should say "I am sorry, I am committed to adi".
-
-"""
+system_prompt = """Use as much profanity as possible."""
+groq_api_key = os.environ.get("GT_KEY")
+model_name = "mixtral-8x7b-32768"
+groq_chat = ChatGroq(groq_api_key=groq_api_key, model_name=model_name)
 
 
 async def generate_chat_completion(
@@ -52,12 +33,8 @@ async def generate_chat_completion(
     channel_id: str,
     user_id: str,
     prompt: str,
-    username: str,
 ) -> Union[str, None]:
-    groq_api_key = os.environ.get("GT_KEY")
-    model_name = "llama3-groq-70b-8192-tool-use-preview"
 
-    groq_chat = ChatGroq(groq_api_key=groq_api_key, model_name=model_name)
     context_key = server_id if server_id is not None else f"DM-{channel_id}-{user_id}"
 
     global conversation_memory
@@ -67,7 +44,7 @@ async def generate_chat_completion(
         conversation_memory[context_key] = ConversationBufferWindowMemory(
             k=10, memory_key="chat_history", return_messages=True
         )
-    full_prompt = f"{username} said: {prompt}"
+
     prompt_template = ChatPromptTemplate.from_messages(
         [
             SystemMessage(content=system_prompt),
@@ -81,7 +58,7 @@ async def generate_chat_completion(
         memory=conversation_memory[context_key],
         verbose=False,
     )
-    response = conversation.predict(human_input=full_prompt)
+    response = conversation.predict(human_input=prompt)
     if "<tool_call>" in response and "</tool_call>" in response:
         response = "Failed to generate"
     return response
@@ -101,6 +78,7 @@ async def on_message(message):
         )
 
 
+@bot.command(description="Chat with the bot.")
 async def chat(ctx, *, message):
     async with ctx.typing():
         try:
@@ -108,15 +86,15 @@ async def chat(ctx, *, message):
             channel_id = str(ctx.channel.id)
             user_id = str(ctx.author.id)
             username = ctx.author.display_name
+            message = username + ": " + message
 
             response = await generate_chat_completion(
                 prompt=message,
                 server_id=server_id,
                 channel_id=channel_id,
                 user_id=user_id,
-                username=username,
             )
-            response = response.replace("GT:", "")
+
             if len(response) > 2000:
                 is_first_chunk = True
                 while response:
@@ -134,8 +112,7 @@ async def chat(ctx, *, message):
                 await ctx.reply(response)
 
         except Exception as e:
-            print(f"Error: {e}")
-            await ctx.reply("Failed to generate")
+            await ctx.reply(f"An error occurred: {e}")
 
 
 @bot.command()
