@@ -109,6 +109,13 @@ async def send_response(ctx, message):
     return message
 
 
+def random_bright_color():
+    def bright_value():
+        return random.randint(128, 255)
+
+    return "#{:02X}{:02X}{:02X}".format(bright_value(), bright_value(), bright_value())
+
+
 async def calculate(ctx, query):
     client = wolframalpha.Client(WOLF)
     loop = asyncio.get_running_loop()
@@ -450,7 +457,9 @@ async def imagine(ctx, *, prompt: str) -> None:
 
         if image_path:
             embed_title = prompt[:253] + "..." if len(prompt) > 256 else prompt
-            embed = discord.Embed(title=embed_title, color=0x00FF00)
+            embed = discord.Embed(
+                title=embed_title, color=int(random_bright_color()[1:], 16)
+            )
             embed.set_image(url=f"attachment://{os.path.basename(image_path)}")
             embed.set_footer(text=f"Time taken: {time_taken:.2f}s")
             await edit_message(
