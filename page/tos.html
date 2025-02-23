@@ -1,51 +1,154 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Terms of Service for Local Bot</title>
-    <!-- Include Tailwind CSS from CDN -->
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <meta name="description" content="Terms of Service for LocalBot - A Discord bot that respects your privacy">
+    <title>LocalBot Terms of Service</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .tos-container {
+            max-width: 1000px;
+        }
+
+        .anchor-offset {
+            scroll-margin-top: 2rem;
+        }
+    </style>
 </head>
-<body class="bg-gray-100 text-gray-700 font-sans">
-    <div class="max-w-4xl mx-auto px-4 py-8">
-        <h1 class="text-3xl font-bold mb-6">Terms of Service for Local Bot</h1>
 
-        <h2 class="text-2xl font-semibold mb-4">1. Acceptance of Terms</h2>
-        <p class="mb-4">By accessing or using the Local Bot ("Bot"), you agree to be bound by these Terms of Service ("Terms"). If you disagree with any part of the terms, then you do not have permission to access the Bot.</p>
+<body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-md fixed w-full z-10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <span class="text-xl font-bold text-gray-800">LocalBot</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="https://github.com/ifsvivek/LocalBot" class="text-gray-600 hover:text-gray-900">GitHub</a>
+                    <a href="#contact" class="text-gray-600 hover:text-gray-900">Contact</a>
+                </div>
+            </div>
+        </div>
+    </nav>
 
-        <h2 class="text-2xl font-semibold mb-4">2. Use License</h2>
-        <p class="mb-4">Permission is granted to temporarily download one copy of the Bot for personal, non-commercial transitory viewing only. This is the grant of a license, not a transfer of title, and under this license, you may not:</p>
-        <ul class="list-disc pl-8 mb-4">
-            <li>modify or copy the materials;</li>
-            <li>use the materials for any commercial purpose, or for any public display (commercial or non-commercial);</li>
-            <li>attempt to decompile or reverse engineer any software contained in the Bot;</li>
-            <li>transfer the materials to another person or "mirror" the materials on any other server.</li>
-        </ul>
-        <p>This license shall automatically terminate if you violate any of these restrictions and may be terminated by the Bot owners at any time.</p>
+    <!-- Main Content -->
+    <main class="pt-20 pb-12">
+        <div class="tos-container mx-auto px-4 sm:px-6 lg:px-8">
+            <header class="text-center mb-12">
+                <h1 class="text-4xl font-bold text-gray-900 mb-4">Terms of Service</h1>
+                <p class="text-gray-600">Last updated: February 22, 2025</p>
+            </header>
 
-        <h2 class="text-2xl font-semibold mb-4">3. Disclaimer</h2>
-        <p class="mb-4">The materials within the Bot are provided on an 'as is' basis. The Bot owners make no warranties, expressed or implied, and hereby disclaims and negates all other warranties including, without limitation, implied warranties or conditions of merchantability, fitness for a particular purpose, or non-infringement of intellectual property or other violation of rights.</p>
+            <div class="bg-white rounded-lg shadow-lg p-6 sm:p-8 space-y-8">
+                <!-- Agreement Section -->
+                <section id="agreement" class="anchor-offset">
+                    <h2 class="text-2xl font-semibold text-gray-800 mb-4">1. Agreement to Terms</h2>
+                    <div class="bg-blue-50 border-l-4 border-blue-500 p-4">
+                        <p class="text-blue-700">
+                            By using LocalBot ("Bot"), you agree to these Terms of Service ("Terms").
+                            If you disagree with any part of these terms, you must not use the Bot.
+                        </p>
+                    </div>
+                </section>
 
-        <h2 class="text-2xl font-semibold mb-4">4. Limitations</h2>
-        <p class="mb-4">In no event shall the Bot owners or its suppliers be liable for any damages (including, without limitation, damages for loss of data or profit, or due to business interruption) arising out of the use or inability to use the Bot, even if the Bot owner or an authorized representative has been notified orally or in writing of the possibility of such damage.</p>
+                <!-- Usage Rights -->
+                <section id="usage" class="anchor-offset">
+                    <h2 class="text-2xl font-semibold text-gray-800 mb-4">2. Usage Rights and Limitations</h2>
+                    <div class="grid md:grid-cols-2 gap-4">
+                        <div class="bg-gray-50 p-4 rounded">
+                            <h3 class="font-semibold mb-2">2.1 Permitted Use</h3>
+                            <ul class="list-disc pl-5 text-gray-600 space-y-1">
+                                <li>Personal, non-commercial use only</li>
+                                <li>Access through official Discord platform</li>
+                                <li>Use of provided commands and features</li>
+                            </ul>
+                        </div>
+                        <div class="bg-gray-50 p-4 rounded">
+                            <h3 class="font-semibold mb-2">2.2 Prohibited Activities</h3>
+                            <ul class="list-disc pl-5 text-gray-600 space-y-1">
+                                <li>Bot modification or reverse engineering</li>
+                                <li>Commercial usage</li>
+                                <li>Feature exploitation</li>
+                                <li>Automated interactions</li>
+                            </ul>
+                        </div>
+                    </div>
+                </section>
 
-        <h2 class="text-2xl font-semibold mb-4">5. Accuracy of Materials</h2>
-        <p class="mb-4">The materials appearing in the Bot could include technical, typographical, or photographic errors. The Bot owners do not warrant that any of the materials on the Bot are accurate, complete, or current. The Bot owners may make changes to the materials contained in the Bot at any time without notice. However, the Bot owners do not make any commitment to update the materials.</p>
+                <!-- Service Availability -->
+                <section id="availability" class="anchor-offset">
+                    <h2 class="text-2xl font-semibold text-gray-800 mb-4">3. Service Availability</h2>
+                    <div class="prose max-w-none text-gray-600">
+                        <ul class="list-disc pl-5 space-y-2">
+                            <li>Service provided "as is" and "as available"</li>
+                            <li>No guarantee of continuous availability</li>
+                            <li>May be interrupted for maintenance or updates</li>
+                            <li>Features may change without notice</li>
+                        </ul>
+                    </div>
+                </section>
 
-        <h2 class="text-2xl font-semibold mb-4">6. Links</h2>
-        <p class="mb-4">The Bot may contain links to external websites that are not provided or maintained by or in any way affiliated with the Bot owners. Please note that the Bot owners do not guarantee the accuracy, relevance, timeliness, or completeness of any information on these external websites.</p>
+                <!-- User Conduct -->
+                <section id="conduct" class="anchor-offset">
+                    <h2 class="text-2xl font-semibold text-gray-800 mb-4">4. User Conduct</h2>
+                    <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-4">
+                        <p class="text-yellow-700">Users must follow Discord's Terms of Service and maintain appropriate behavior.</p>
+                    </div>
+                    <div class="grid sm:grid-cols-2 gap-4">
+                        <div class="bg-gray-50 p-4 rounded">
+                            <h3 class="font-semibold mb-2">Required</h3>
+                            <ul class="list-disc pl-5 text-gray-600 space-y-1">
+                                <li>Appropriate language and content</li>
+                                <li>Respect for other users</li>
+                                <li>Responsible feature use</li>
+                            </ul>
+                        </div>
+                        <div class="bg-gray-50 p-4 rounded">
+                            <h3 class="font-semibold mb-2">Prohibited</h3>
+                            <ul class="list-disc pl-5 text-gray-600 space-y-1">
+                                <li>Spam or abuse</li>
+                                <li>Harmful content</li>
+                                <li>Unauthorized automation</li>
+                            </ul>
+                        </div>
+                    </div>
+                </section>
 
-        <h2 class="text-2xl font-semibold mb-4">7. Modifications</h2>
-        <p class="mb-4">The Bot owners may revise these Terms of Service for the Bot at any time without notice. By using this Bot, you are agreeing to be bound by the then-current version of these Terms of Service.</p>
+                <!-- Additional Sections -->
+                <section id="disclaimers" class="anchor-offset">
+                    <h2 class="text-2xl font-semibold text-gray-800 mb-4">5. Disclaimers and Limitations</h2>
+                    <div class="bg-red-50 border-l-4 border-red-500 p-4">
+                        <p class="text-red-700">
+                            The Bot is provided without warranties. We are not liable for any damages
+                            arising from your use of the service.
+                        </p>
+                    </div>
+                </section>
 
-        <h2 class="text-2xl font-semibold mb-4">8. Governing Law</h2>
-        <p class="mb-4">These terms and conditions are governed by and construed in accordance with the laws of the jurisdiction in which the Bot owners reside, and you irrevocably submit to the exclusive jurisdiction of the courts in that State or location.</p>
+                <!-- Contact Section -->
+                <section id="contact" class="anchor-offset">
+                    <h2 class="text-2xl font-semibold text-gray-800 mb-4">6. Contact Information</h2>
+                    <div class="bg-gray-50 p-4 rounded">
+                        <p class="text-gray-600 mb-2">For Terms of Service inquiries:</p>
+                        <ul class="space-y-2 text-gray-600">
+                            <li>• GitHub: <a href="https://github.com/ifsvivek/LocalBot" class="text-blue-600 hover:underline">LocalBot Repository</a></li>
 
-        <h2 class="text-2xl font-semibold mb-4">9. Contact Information</h2>
-        <p class="mb-4">If you have any inquiries regarding these Terms of Service, please contact the Bot owners through the contact information provided in the <a href="https://github.com/ifsvivek/LocalBot" class="text-blue-500 hover:text-blue-700">README.md</a> file.</p>
+                        </ul>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
 
-        <p class="text-sm italic"><em>Last Updated: 07/07/2024</em></p>
-    </div>
+
 </body>
+
 </html>
