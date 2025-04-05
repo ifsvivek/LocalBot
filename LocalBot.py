@@ -41,32 +41,51 @@ My core abilities include:
 • Weather updates and calculations
 • Games and entertainment
 
-When I need to use a tool, I use this format:
+TOOL CALLING INSTRUCTIONS:
+When I need to use a tool, I should wrap the tool call in special tags:
 <tool_call>
 {"name": "tool-name", "arguments": {"key": "value"}}
 </tool_call>
 
+HOW TOOL CALLING WORKS:
+1. When I decide to use a tool, I should include the tool call in my response
+2. The tool will be executed automatically
+3. I will be called again with the results of the tool execution
+4. I should then provide a complete response that incorporates the tool results
+
+EXAMPLE WORKFLOW:
+User: "What's the weather in New York?"
+My first response might include: 
+<tool_call>
+{"name": "weather", "arguments": {"city": "New York"}}
+</tool_call>
+
+Then I'll receive the tool results and generate a final comprehensive response like:
+"The weather in New York is currently 72°F (22°C) with partly cloudy skies. The humidity is at 45% with a light breeze of 8 mph. It looks like a pleasant day overall!"
+
 Available Tools:
 1. Information & Utility
-   • /weather [city] - Current weather conditions
-   • /calculate [query] - Math, time, date, general knowledge
-   • /lyrics [song] - Get song lyrics
-
+   • weather [city] - Current weather conditions
+   • calculate [query] - Math, time, date, general knowledge
+   • lyrics [song] - Get song lyrics
+   • whats_new - Display recent bot updates and new features
 2. Entertainment & Games
-   • /imagine [prompt] - Generate images
-   • /gtn - Number guessing game
-   • /dice [sides] - Roll dice (default: 6)
-   • /flip - Flip a coin
-   • /ask [question] - Yes/no answers
+   • imagine [prompt] - Generate images
+   • gtn - Number guessing game
+   • dice [sides] - Roll dice (default: 6)
+   • flip - Flip a coin
+   • ask [question] - Yes/no answers
 
 3. Media
-   • /cat - Random cat image
-   • /dog - Random dog image
-   • /gt - Sends picture of GT
+   • cat - Random cat image
+   • dog - Random dog image
+   • gt - Sends picture of GT
+   • music [query] - Play music in voice channel
+   • leave - Disconnect bot from voice channel
 
 4. Management
-   • /purge [amount] - Delete messages
-   • /clear [amount] - Clear DM messages
+   • purge [amount] - Delete messages
+   • clear [amount] - Clear DM messages
 
 Response Guidelines:
 • Keep responses concise and natural
@@ -74,6 +93,8 @@ Response Guidelines:
 • For errors, provide clear, friendly explanations
 • Maintain context in conversations
 • Format responses for readability
+• When using tools, focus on incorporating tool results naturally in your final response
+• For music playback, check if the user is in a voice channel first
 
 Note: Process user messages in format "username: message" but respond to message content only.
 """
@@ -117,7 +138,7 @@ def random_bright_color():
     return "#{:02X}{:02X}{:02X}".format(bright_value(), bright_value(), bright_value())
 
 
-async def calculate(ctx, query):
+async def calculate(ctx, query, from_tool_call=False):
     client = wolframalpha.Client(WOLF)
     loop = asyncio.get_running_loop()
     try:
@@ -136,12 +157,14 @@ async def calculate(ctx, query):
                         result_texts.append(subpod["plaintext"])
                     if "img" in subpod and "@src" in subpod["img"]:
                         image_links.append(subpod["img"]["@src"])
-        if result_texts:
+        if result_texts and not from_tool_call:
             await send_response(ctx, result_texts[1])
-        return json.dumps({"results": result_texts, "images": image_links})
+        return result_texts[1] if result_texts else "No results found"
     except Exception as e:
         print(f"An error occurred: {e}")
-        await send_response(ctx, "An error occurred while fetching the result.")
+        if not from_tool_call:
+            await send_response(ctx, "An error occurred while fetching the result.")
+        return f"Error: {str(e)}"
 
 
 async def generate_chat_completion(
@@ -150,23 +173,20 @@ async def generate_chat_completion(
     channel_id: str,
     user_id: str,
     prompt: str,
+    is_tool_followup: bool = False,
 ) -> Optional[str]:
     """Generate a chat completion response."""
     try:
+        global conversation_memory
         context_key = server_id if server_id else f"DM-{channel_id}-{user_id}"
 
-        # Initialize or get existing memory
-        if not hasattr(generate_chat_completion, "conversation_memory"):
-            generate_chat_completion.conversation_memory = {}
-
-        if context_key not in generate_chat_completion.conversation_memory:
-            generate_chat_completion.conversation_memory[context_key] = (
-                ConversationBufferWindowMemory(
-                    k=10, memory_key="chat_history", return_messages=True
-                )
+        # Initialize memory if it doesn't exist for this context
+        if context_key not in conversation_memory:
+            conversation_memory[context_key] = ConversationBufferWindowMemory(
+                k=10, memory_key="chat_history", return_messages=True
             )
 
-        memory = generate_chat_completion.conversation_memory[context_key]
+        memory = conversation_memory[context_key]
 
         # Create prompt template
         prompt_template = ChatPromptTemplate.from_messages(
@@ -185,10 +205,8 @@ async def generate_chat_completion(
         # Generate response
         response = await asyncio.to_thread(conversation.predict, human_input=prompt)
 
-        # Handle tool calls if present
-        if "<tool_call>" in response and "</tool_call>" in response:
-            response = await handle_tool_call(ctx, response, memory)
-
+        # We don't process tool calls here anymore, just return the response
+        # Tool calls are now handled in the chat function
         return response
 
     except Exception as e:
@@ -198,14 +216,17 @@ async def generate_chat_completion(
 
 
 async def handle_tool_call(
-    ctx: commands.Context, response: str, memory: ConversationBufferWindowMemory
+    ctx: commands.Context,
+    tool_call_text: str,
+    memory: ConversationBufferWindowMemory,
+    send_directly: bool = False,
 ) -> str:
     """Handle tool calls embedded in the response."""
     try:
         # Extract tool call
-        start = response.index("<tool_call>") + len("<tool_call>")
-        end = response.index("</tool_call>")
-        tool_call_json = response[start:end].strip()
+        start = tool_call_text.index("<tool_call>") + len("<tool_call>")
+        end = tool_call_text.index("</tool_call>")
+        tool_call_json = tool_call_text[start:end].strip()
 
         # Parse tool call
         try:
@@ -221,18 +242,41 @@ async def handle_tool_call(
 
         # Define available tools with type hints
         tool_actions = {
-            "imagine": lambda: imagine(ctx, prompt=tool_arguments.get("prompt")),
-            "cat": lambda: cat(ctx),
-            "dog": lambda: dog(ctx),
-            "gtn": lambda: gtn(ctx),
-            "hello": lambda: hello(ctx),
-            "dice": lambda: dice(ctx, sides=int(tool_arguments.get("sides", 6))),
-            "flip": lambda: flip(ctx),
-            "ask": lambda: ask(ctx, question=tool_arguments.get("question")),
-            "purge": lambda: purge(ctx, amount=int(tool_arguments.get("amount", 5))),
-            "calculate": lambda: calculate(ctx, query=tool_arguments.get("query")),
-            "weather": lambda: weather(ctx, city=tool_arguments.get("city")),
-            "gt": lambda: gt(ctx),
+            "imagine": lambda: imagine(
+                ctx, prompt=tool_arguments.get("prompt"), from_tool_call=send_directly
+            ),
+            "cat": lambda: cat(ctx, from_tool_call=send_directly),
+            "dog": lambda: dog(ctx, from_tool_call=send_directly),
+            "gtn": lambda: gtn(ctx, from_tool_call=send_directly),
+            "hello": lambda: hello(ctx, from_tool_call=send_directly),
+            "dice": lambda: dice(
+                ctx,
+                sides=int(tool_arguments.get("sides", 6)),
+                from_tool_call=send_directly,
+            ),
+            "flip": lambda: flip(ctx, from_tool_call=send_directly),
+            "ask": lambda: ask(
+                ctx,
+                question=tool_arguments.get("question"),
+                from_tool_call=send_directly,
+            ),
+            "purge": lambda: purge(
+                ctx,
+                amount=int(tool_arguments.get("amount", 5)),
+                from_tool_call=send_directly,
+            ),
+            "calculate": lambda: calculate(
+                ctx, query=tool_arguments.get("query"), from_tool_call=send_directly
+            ),
+            "weather": lambda: weather(
+                ctx, city=tool_arguments.get("city"), from_tool_call=send_directly
+            ),
+            "gt": lambda: gt(ctx, from_tool_call=send_directly),
+            "music": lambda: music_play(
+                ctx, query=tool_arguments.get("query"), from_tool_call=send_directly
+            ),
+            "leave": lambda: music_leave(ctx, from_tool_call=send_directly),
+            "whats_new": lambda: whats_new(ctx, from_tool_call=send_directly),
         }
 
         # Execute tool
@@ -242,21 +286,23 @@ async def handle_tool_call(
         result = await tool_actions[tool_name]()
 
         # Update memory with tool result
-        if result:
+        if result and memory:
             memory.chat_memory.messages[-1].content += f"\nTool result: {result}"
 
-        return memory.chat_memory.messages[-1].content
+        return result
 
     except (ValueError, KeyError) as e:
         error_msg = f"Tool call error: {str(e)}"
         print(error_msg)
-        await send_response(ctx, "I encountered an error with the requested tool.")
-        return response
+        if not send_directly:
+            await send_response(ctx, "I encountered an error with the requested tool.")
+        return f"Error: {str(e)}"
 
     except Exception as e:
         print(f"Unexpected tool error: {str(e)}")
-        await send_response(ctx, "An unexpected error occurred.")
-        return response
+        if not send_directly:
+            await send_response(ctx, "An unexpected error occurred.")
+        return f"Error: {str(e)}"
 
 
 async def generate_image(prompt: str) -> Optional[str]:
@@ -319,7 +365,7 @@ statuses = [
     "Online and active ✨",
     "Fast responses ⚡",
     "24/7 Service 🕒",
-    "Version 3.0 🆕",
+    "Version 4.0 🆕",
 ]
 
 
@@ -346,7 +392,7 @@ async def on_message(message):
 
 
 @bot.slash_command(description="Send a picture of a cat.")
-async def cat(ctx):
+async def cat(ctx, from_tool_call=False):
     async with aiohttp.ClientSession() as session:
         async with session.get(
             "https://api.thecatapi.com/v1/images/search"
@@ -354,14 +400,17 @@ async def cat(ctx):
             if response.status == 200:
                 data = await response.json()
                 image_url = data[0]["url"]
-                await send_response(ctx, image_url)
+                if not from_tool_call:
+                    await send_response(ctx, image_url)
                 return image_url
             else:
-                await send_response(ctx, "Failed to fetch cat image.")
+                if not from_tool_call:
+                    await send_response(ctx, "Failed to fetch cat image.")
+                return "Failed to fetch cat image."
 
 
 @bot.slash_command(description="Send a picture of a dog.")
-async def dog(ctx):
+async def dog(ctx, from_tool_call=False):
     async with aiohttp.ClientSession() as session:
         async with session.get(
             "https://api.thedogapi.com/v1/images/search"
@@ -369,22 +418,28 @@ async def dog(ctx):
             if response.status == 200:
                 data = await response.json()
                 image_url = data[0]["url"]
-                await send_response(ctx, image_url)
+                if not from_tool_call:
+                    await send_response(ctx, image_url)
                 return image_url
             else:
-                await send_response(ctx, "Failed to fetch dog image.")
+                if not from_tool_call:
+                    await send_response(ctx, "Failed to fetch dog image.")
+                return "Failed to fetch dog image."
 
 
 @bot.slash_command(description="Send a picture of GT.")
-async def gt(ctx):
-    await send_response(ctx, "https://imgur.com/a/HlM60jA")
-    return "https://imgur.com/a/HlM60jA"
+async def gt(ctx, from_tool_call=False):
+    image_url = "https://imgur.com/a/HlM60jA"
+    if not from_tool_call:
+        await send_response(ctx, image_url)
+    return image_url
 
 
 @bot.slash_command(description="Game: Guess the number between 1 and 10.")
-async def gtn(ctx):
+async def gtn(ctx, from_tool_call=False):
     secret_number = random.randint(1, 10)
-    await send_response(ctx, "Guess a number between 1 and 10.")
+    if not from_tool_call:
+        await send_response(ctx, "Guess a number between 1 and 10.")
 
     def check(message):
         return message.author == ctx.author and message.content.isdigit()
@@ -394,45 +449,58 @@ async def gtn(ctx):
         guess_number = int(guess.content)
         if 1 <= guess_number <= 10:
             if guess_number == secret_number:
-                await send_response(
-                    ctx, "Congratulations! You guessed the correct number."
-                )
+                if not from_tool_call:
+                    await send_response(
+                        ctx, "Congratulations! You guessed the correct number."
+                    )
             else:
-                await send_response(
-                    ctx, f"Sorry, the correct number was {secret_number}."
-                )
+                if not from_tool_call:
+                    await send_response(
+                        ctx, f"Sorry, the correct number was {secret_number}."
+                    )
             return f"Guessed number: {guess_number}\nSecret number: {secret_number}"
         else:
-            await send_response(ctx, "Please enter a number between 1 and 10.")
+            if not from_tool_call:
+                await send_response(ctx, "Please enter a number between 1 and 10.")
     except asyncio.TimeoutError:
-        await send_response(ctx, "Time is up! You took too long to guess.")
+        if not from_tool_call:
+            await send_response(ctx, "Time is up! You took too long to guess.")
+        return "User timed out while guessing."
 
 
 @bot.slash_command(description="Tell the user hello.")
-async def hello(ctx):
-    await send_response(ctx, f"Hello, {ctx.author.display_name}!")
-    return f"Hello, {ctx.author.display_name}!"
+async def hello(ctx, from_tool_call=False):
+    message = f"Hello, {ctx.author.display_name}!"
+    if not from_tool_call:
+        await send_response(ctx, message)
+    return message
 
 
 @bot.slash_command(description="Roll a dice with the specified number of sides.")
-async def dice(ctx, sides: int = 6):
+async def dice(ctx, sides: int = 6, from_tool_call=False):
     result = random.randint(1, sides)
-    await send_response(ctx, f"You rolled a {result}.")
+    message = f"You rolled a {result}."
+    if not from_tool_call:
+        await send_response(ctx, message)
     return f"Rolled a {result} on a {sides}-sided dice."
 
 
 @bot.slash_command(description="Flip a coin.")
-async def flip(ctx):
+async def flip(ctx, from_tool_call=False):
     result = random.choice(["Heads", "Tails"])
-    await send_response(ctx, f"The coin landed on: **{result}**")
+    message = f"The coin landed on: **{result}**"
+    if not from_tool_call:
+        await send_response(ctx, message)
     return f"Coin flip result: {result}"
 
 
 @bot.slash_command(description="Ask the bot a yes/no question.")
-async def ask(ctx, question: str):
+async def ask(ctx, question: str, from_tool_call=False):
     result = random.choice(["Yes", "No", "Maybe", "Definitely", "Not likely"])
-    await send_response(ctx, f"Question: {question}\nAnswer: {result}")
-    return f"Question: {question}\nAnswer: {result}"
+    message = f"Question: {question}\nAnswer: {result}"
+    if not from_tool_call:
+        await send_response(ctx, message)
+    return message
 
 
 @bot.command(description="Chat with the bot.")
@@ -446,6 +514,19 @@ async def chat(ctx, *, message):
 
             message = username + ": " + message
 
+            # Get the memory context key
+            context_key = server_id if server_id else f"DM-{channel_id}-{user_id}"
+
+            # Make sure memory is initialized
+            global conversation_memory
+            if context_key not in conversation_memory:
+                conversation_memory[context_key] = ConversationBufferWindowMemory(
+                    k=10, memory_key="chat_history", return_messages=True
+                )
+
+            memory = conversation_memory[context_key]
+
+            # Initial response generation
             response = await generate_chat_completion(
                 ctx=ctx,
                 prompt=message,
@@ -454,31 +535,95 @@ async def chat(ctx, *, message):
                 user_id=user_id,
             )
 
-            if "<tool_call>" in response:
-                return
+            # Process all tool calls in sequence
+            tool_was_used = False
+            while "<tool_call>" in response and "</tool_call>" in response:
+                tool_was_used = True
+                # Extract the tool call
+                tool_start = response.find("<tool_call>")
+                tool_end = response.find("</tool_call>") + len("</tool_call>")
+                tool_call_text = response[tool_start:tool_end]
 
-            if len(response) > 2000:
-                is_first_chunk = True
-                while response:
-                    split_at = (response[:2000].rfind("\n") + 1) or 2000
-                    chunk, response = (
-                        response[:split_at].strip(),
-                        response[split_at:].trip(),
+                # Save text before the tool call - this may contain context that needs to be sent
+                pre_tool_text = response[:tool_start].strip()
+                if pre_tool_text:
+                    # Only send preceding text for the first tool in a sequence
+                    first_tool_call = not any(
+                        "<tool_call>" in msg.content
+                        for msg in memory.chat_memory.messages
+                        if hasattr(msg, "content")
                     )
-                    if is_first_chunk:
-                        await ctx.reply(chunk)
-                        is_first_chunk = False
-                    else:
-                        await ctx.send(chunk)
-            else:
-                await ctx.reply(response)
+                    if first_tool_call:
+                        await ctx.reply(pre_tool_text)
+
+                # Execute the tool and get results
+                tool_result = await handle_tool_call(
+                    ctx,
+                    tool_call_text,
+                    memory,
+                    send_directly=True,  # Prevent tools from sending their own message
+                )
+
+                print(f"Tool result: {tool_result}")  # Debug print
+
+                # If there's more text after this tool call, check if it contains another tool call
+                remaining_text = response[tool_end:].strip()
+
+                if "<tool_call>" in remaining_text:
+                    # There's another tool call, continue processing
+                    response = remaining_text
+                else:
+                    # No more tool calls, generate final response with all tool results
+                    followup_prompt = (
+                        f"You used one or more tools to answer the user's question. "
+                        f"The last tool result was: {tool_result}. "
+                        f"Please provide a complete response that incorporates all information "
+                        f"and answers the original question fully. Do not use any more tool calls."
+                    )
+
+                    followup_response = await generate_chat_completion(
+                        ctx=ctx,
+                        prompt=username + ": " + followup_prompt,
+                        server_id=server_id,
+                        channel_id=channel_id,
+                        user_id=user_id,
+                        is_tool_followup=True,
+                    )
+
+                    # Send the complete response
+                    await send_complete_response(ctx, followup_response)
+                    break  # Exit the loop as we've processed all tools and sent a response
+
+            # If no tool calls were found, send the response directly
+            if not tool_was_used:
+                await send_complete_response(ctx, response)
 
         except Exception as e:
+            print(f"Error in chat command: {e}")
             await send_response(ctx, f"An error occurred: {e}")
 
 
+async def send_complete_response(ctx, response):
+    """Send a complete response, handling message size limits."""
+    if len(response) > 2000:
+        is_first_chunk = True
+        while response:
+            split_at = (response[:2000].rfind("\n") + 1) or 2000
+            chunk, response = (
+                response[:split_at].strip(),
+                response[split_at:].strip(),
+            )
+            if is_first_chunk:
+                await ctx.reply(chunk)
+                is_first_chunk = False
+            else:
+                await ctx.send(chunk)
+    else:
+        await ctx.reply(response)
+
+
 @bot.slash_command(description="Generate an image based on a prompt.")
-async def imagine(ctx, *, prompt: str) -> None:
+async def imagine(ctx, *, prompt: str, from_tool_call: bool = False) -> None:
     async def send_initial_message():
         if hasattr(ctx, "respond"):
             return await ctx.respond("Generating image, please wait...")
@@ -493,7 +638,8 @@ async def imagine(ctx, *, prompt: str) -> None:
 
     try:
         start_time = time.time()
-        initial_message = await send_initial_message()
+        if not from_tool_call:
+            initial_message = await send_initial_message()
         image_path = await generate_image(prompt)
         time_taken = time.time() - start_time
 
@@ -504,28 +650,38 @@ async def imagine(ctx, *, prompt: str) -> None:
             )
             embed.set_image(url=f"attachment://{os.path.basename(image_path)}")
             embed.set_footer(text=f"Time taken: {time_taken:.2f}s")
-            await edit_message(
-                initial_message,
-                content=None,
-                embed=embed,
-                file=discord.File(image_path),
-            )
+
+            if not from_tool_call:
+                await edit_message(
+                    initial_message,
+                    content=None,
+                    embed=embed,
+                    file=discord.File(image_path),
+                )
+
+            file_path = image_path
             if os.path.exists(image_path):
                 os.remove(image_path)
+            return file_path
         else:
-            await edit_message(initial_message, content="Failed to generate image.")
+            if not from_tool_call:
+                await edit_message(initial_message, content="Failed to generate image.")
+            return "Failed to generate image."
     except Exception as e:
         print(f"Error generating image: {e}")
-        if hasattr(ctx, "respond"):
-            await ctx.respond("An error occurred while generating the image.")
-        else:
-            await ctx.reply("An error occurred while generating the image.")
+        if not from_tool_call:
+            if hasattr(ctx, "respond"):
+                await ctx.respond("An error occurred while generating the image.")
+            else:
+                await ctx.reply("An error occurred while generating the image.")
+        return f"Error: {str(e)}"
 
 
 @bot.slash_command(description="Delete a set number of messages.")
-async def purge(ctx, amount: int):
+async def purge(ctx, amount: int, from_tool_call=False):
     await ctx.channel.purge(limit=amount + 1)
-    await send_response(ctx, f"Deleted {amount} messages.")
+    if not from_tool_call:
+        await send_response(ctx, f"Deleted {amount} messages.")
     return f"Deleted {amount} messages."
 
 
@@ -590,9 +746,30 @@ async def play_song(ctx, info, filename):
 
 @bot.slash_command(description="Play a song or playlist from YouTube.")
 async def play(ctx, *, query):
+    # Check if user is in a voice channel
+    if not ctx.author.voice:
+        await ctx.response.send_message(
+            "You need to be in a voice channel to play music.", ephemeral=True
+        )
+        return
+
     state = await get_server_state(ctx.guild.id)
+
+    # Join the user's voice channel if not already connected
     if not ctx.voice_client:
-        await join(ctx)
+        channel = ctx.author.voice.channel
+        await channel.connect()
+        await ctx.response.defer()
+    else:
+        # If already in a voice channel but it's different from the user's, move to user's channel
+        if ctx.voice_client.channel != ctx.author.voice.channel:
+            await ctx.voice_client.disconnect()
+            channel = ctx.author.voice.channel
+            await channel.connect()
+            await ctx.response.defer()
+        else:
+            await ctx.response.defer()
+
     ydl = youtube_dl.YoutubeDL(ytdl_format_options)
 
     if "http" in query:
@@ -682,7 +859,7 @@ async def pin(ctx):
         await ctx.send("Please reply to the message you want to pin.")
 
 
-async def weather(ctx, city: str) -> str:
+async def weather(ctx, city: str, from_tool_call: bool = False) -> str:
     """Get current weather for a city using OpenWeatherMap API."""
     try:
         # Use direct city query instead of geocoding
@@ -695,8 +872,10 @@ async def weather(ctx, city: str) -> str:
             async with session.get(weather_url) as response:
                 if response.status != 200:
                     if response.status == 404:
-                        await send_response(ctx, f"Could not find city: {city}")
-                        return f"City not found: {city}"
+                        error_msg = f"Could not find city: {city}"
+                        if not from_tool_call:
+                            await send_response(ctx, error_msg)
+                        return error_msg
                     raise Exception(f"Weather API error: {response.status}")
 
                 data = await response.json()
@@ -719,9 +898,9 @@ async def weather(ctx, city: str) -> str:
                     weather_emoji = "⛈️"  # thunderstorm
                 elif weather_id < 400:
                     weather_emoji = "🌧️"  # drizzle
-                elif weather_id < 600:
+                elif weather_id < 500:
                     weather_emoji = "🌧️"  # rain
-                elif weather_id < 700:
+                elif weather_id < 600:
                     weather_emoji = "🌨️"  # snow
                 elif weather_id < 800:
                     weather_emoji = "🌫️"  # atmosphere
@@ -740,19 +919,170 @@ async def weather(ctx, city: str) -> str:
                     f"☁️ Conditions: {weather_desc.capitalize()}"
                 )
 
-                await send_response(ctx, response)
+                if not from_tool_call:
+                    await send_response(ctx, response)
                 return response
 
     except Exception as e:
         error_msg = f"Error fetching weather: {str(e)}"
         print(error_msg)
-        await send_response(ctx, "Sorry, I couldn't fetch the weather information.")
+        if not from_tool_call:
+            await send_response(ctx, "Sorry, I couldn't fetch the weather information.")
         return error_msg
 
 
 @bot.slash_command(description="Get current weather for a city.")
 async def getweather(ctx, *, city: str):
     await weather(ctx, city)
+
+
+async def music_play(ctx, query: str, from_tool_call: bool = False) -> str:
+    """Play music in a voice channel via the chat interface."""
+    try:
+        # Check if user is in a voice channel
+        if not ctx.author.voice:
+            message = "You need to be in a voice channel to play music."
+            if not from_tool_call:
+                await ctx.reply(message)
+            return message
+
+        state = await get_server_state(ctx.guild.id)
+
+        # Join the user's voice channel if not already connected
+        if not ctx.voice_client:
+            channel = ctx.author.voice.channel
+            try:
+                await channel.connect()
+            except discord.errors.ClientException as e:
+                error_msg = f"Couldn't connect to voice channel: {str(e)}"
+                if not from_tool_call:
+                    await ctx.reply(error_msg)
+                return error_msg
+        else:
+            # If already in a different voice channel, move to user's channel
+            if ctx.voice_client.channel != ctx.author.voice.channel:
+                await ctx.voice_client.disconnect()
+                channel = ctx.author.voice.channel
+                try:
+                    await channel.connect()
+                except discord.errors.ClientException as e:
+                    error_msg = f"Couldn't connect to voice channel: {str(e)}"
+                    if not from_tool_call:
+                        await ctx.reply(error_msg)
+                    return error_msg
+
+        ydl = youtube_dl.YoutubeDL(ytdl_format_options)
+
+        if "http" in query:
+            url = query
+        else:
+            url = f"ytsearch:{query}"
+
+        # Status message
+        status_message = f"Searching for '{query}'..."
+        if not from_tool_call:
+            await ctx.reply(status_message)
+
+        try:
+            # Extract info and download
+            info = ydl.extract_info(url, download=True)
+
+            if "entries" in info:
+                # It's a playlist
+                songs_added = 0
+                for entry in info["entries"]:
+                    filename = ydl.prepare_filename(entry)
+                    state["playlist_queue"].append(
+                        {"info": entry, "filename": filename}
+                    )
+                    songs_added += 1
+                result = f"Added {songs_added} songs to the queue from playlist."
+            else:
+                # It's a single song
+                filename = ydl.prepare_filename(info)
+                state["playlist_queue"].append({"info": info, "filename": filename})
+                result = f"Added '{info['title']}' to the queue."
+
+            # Start playing if nothing is currently playing
+            if not state["current_song"] and state["playlist_queue"]:
+                next_song = state["playlist_queue"].pop(0)
+                title = next_song["info"]["title"]
+                # Direct message handling instead of using followup
+                await ctx.send(f"Now playing: {title}")
+
+                # Set up playback
+                ctx.voice_client.play(
+                    discord.FFmpegPCMAudio(next_song["filename"], **ffmpeg_options),
+                    after=lambda e: bot.loop.create_task(after_playback(e, ctx)),
+                )
+
+                state["current_song"] = next_song
+                result = f"Now playing: {title}"
+
+            return result
+
+        except Exception as e:
+            error_message = f"Error: {str(e)}"
+            if not from_tool_call:
+                await ctx.reply(error_message)
+            return error_message
+
+    except Exception as e:
+        error_message = f"Failed to play music: {str(e)}"
+        if not from_tool_call:
+            await ctx.reply(error_message)
+        return error_message
+
+
+async def music_leave(ctx, from_tool_call: bool = False) -> str:
+    """Leave the voice channel via the chat interface."""
+    try:
+        if ctx.voice_client:
+            await ctx.voice_client.disconnect()
+            message = "I've left the voice channel."
+            if not from_tool_call:
+                await ctx.reply(message)
+            return message
+        else:
+            message = "I'm not in a voice channel."
+            if not from_tool_call:
+                await ctx.reply(message)
+            return message
+    except Exception as e:
+        error_message = f"Failed to leave voice channel: {str(e)}"
+        if not from_tool_call:
+            await ctx.reply(error_message)
+        return error_message
+
+
+async def whats_new(ctx, from_tool_call=False):
+    """Read the whatsnew.md file and tell users what's new."""
+    try:
+        whatsnew_path = os.path.join(os.path.dirname(__file__), "whatsnew.md")
+        
+        if not os.path.exists(whatsnew_path):
+            message = "The What's New file couldn't be found. Please check with the bot administrator."
+            if not from_tool_call:
+                await ctx.reply(message)
+            return message
+            
+        with open(whatsnew_path, 'r') as file:
+            content = file.read()
+            
+        # If the content is too long, summarize or truncate it
+        if len(content) > 1900:
+            content = content[:1900] + "\n\n... (truncated)"
+            
+        message = f"**What's New in LocalBot**\n\n{content}"
+        
+        if not from_tool_call:
+            await ctx.reply(message)
+        return message
+    except Exception as e:
+        error_message = f"Error reading What's New information: {str(e)}"
+        if not from_tool_call:
+            await ctx.reply(error_message)
+        return error_message
 
 
 bot.run(TOKEN)
