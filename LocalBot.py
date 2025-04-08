@@ -100,7 +100,7 @@ Note: Process user messages in format "username: message" but respond to message
 """
 
 groq_api_key = os.environ.get("GROQ_API_KEY")
-model_name = "llama-3.2-90b-vision-preview"
+model_name = "meta-llama/llama-4-maverick-17b-128e-instruct"
 groq_chat = ChatGroq(groq_api_key=groq_api_key, model_name=model_name)
 
 ytdl_format_options = {
