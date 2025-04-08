@@ -43,9 +43,9 @@ My core abilities include:
 
 TOOL CALLING INSTRUCTIONS:
 When I need to use a tool, I should wrap the tool call in special tags:
-<tool_call>
+<tool_calls>
 {"name": "tool-name", "arguments": {"key": "value"}}
-</tool_call>
+</tool_calls>
 
 HOW TOOL CALLING WORKS:
 1. When I decide to use a tool, I should include the tool call in my response
@@ -56,9 +56,9 @@ HOW TOOL CALLING WORKS:
 EXAMPLE WORKFLOW:
 User: "What's the weather in New York?"
 My first response might include: 
-<tool_call>
+<tool_calls>
 {"name": "weather", "arguments": {"city": "New York"}}
-</tool_call>
+</tool_calls>
 
 Then I'll receive the tool results and generate a final comprehensive response like:
 "The weather in New York is currently 72°F (22°C) with partly cloudy skies. The humidity is at 45% with a light breeze of 8 mph. It looks like a pleasant day overall!"
@@ -224,8 +224,8 @@ async def handle_tool_call(
     """Handle tool calls embedded in the response."""
     try:
         # Extract tool call
-        start = tool_call_text.index("<tool_call>") + len("<tool_call>")
-        end = tool_call_text.index("</tool_call>")
+        start = tool_call_text.index("<tool_calls>") + len("<tool_calls>")
+        end = tool_call_text.index("</tool_calls>")
         tool_call_json = tool_call_text[start:end].strip()
 
         # Parse tool call
@@ -242,9 +242,7 @@ async def handle_tool_call(
 
         # Define available tools with type hints
         tool_actions = {
-            "imagine": lambda: imagine(
-                ctx, prompt=tool_arguments.get("prompt"), from_tool_call=send_directly
-            ),
+            "imagine": lambda: imagine(ctx, prompt=tool_arguments.get("prompt"), from_tool_call=send_directly),
             "cat": lambda: cat(ctx, from_tool_call=send_directly),
             "dog": lambda: dog(ctx, from_tool_call=send_directly),
             "gtn": lambda: gtn(ctx, from_tool_call=send_directly),
@@ -537,11 +535,11 @@ async def chat(ctx, *, message):
 
             # Process all tool calls in sequence
             tool_was_used = False
-            while "<tool_call>" in response and "</tool_call>" in response:
+            while "<tool_calls>" in response and "</tool_calls>" in response:
                 tool_was_used = True
                 # Extract the tool call
-                tool_start = response.find("<tool_call>")
-                tool_end = response.find("</tool_call>") + len("</tool_call>")
+                tool_start = response.find("<tool_calls>")
+                tool_end = response.find("</tool_calls>") + len("</tool_calls>")
                 tool_call_text = response[tool_start:tool_end]
 
                 # Save text before the tool call - this may contain context that needs to be sent
@@ -549,7 +547,7 @@ async def chat(ctx, *, message):
                 if pre_tool_text:
                     # Only send preceding text for the first tool in a sequence
                     first_tool_call = not any(
-                        "<tool_call>" in msg.content
+                        "<tool_calls>" in msg.content
                         for msg in memory.chat_memory.messages
                         if hasattr(msg, "content")
                     )
@@ -569,7 +567,7 @@ async def chat(ctx, *, message):
                 # If there's more text after this tool call, check if it contains another tool call
                 remaining_text = response[tool_end:].strip()
 
-                if "<tool_call>" in remaining_text:
+                if "<tool_calls>" in remaining_text:
                     # There's another tool call, continue processing
                     response = remaining_text
                 else:
@@ -623,7 +621,7 @@ async def send_complete_response(ctx, response):
 
 
 @bot.slash_command(description="Generate an image based on a prompt.")
-async def imagine(ctx, *, prompt: str, from_tool_call: bool = False) -> None:
+async def imagine(ctx, *, prompt: str, from_tool_call=False) -> None:
     async def send_initial_message():
         if hasattr(ctx, "respond"):
             return await ctx.respond("Generating image, please wait...")
@@ -638,8 +636,9 @@ async def imagine(ctx, *, prompt: str, from_tool_call: bool = False) -> None:
 
     try:
         start_time = time.time()
-        if not from_tool_call:
-            initial_message = await send_initial_message()
+
+        # Only send the initial message if not called from a tool call
+        initial_message = await send_initial_message() if not from_tool_call else None
         image_path = await generate_image(prompt)
         time_taken = time.time() - start_time
 
@@ -651,6 +650,7 @@ async def imagine(ctx, *, prompt: str, from_tool_call: bool = False) -> None:
             embed.set_image(url=f"attachment://{os.path.basename(image_path)}")
             embed.set_footer(text=f"Time taken: {time_taken:.2f}s")
 
+            # Only edit/send the message if not called from a tool call
             if not from_tool_call:
                 await edit_message(
                     initial_message,
@@ -659,16 +659,17 @@ async def imagine(ctx, *, prompt: str, from_tool_call: bool = False) -> None:
                     file=discord.File(image_path),
                 )
 
-            file_path = image_path
             if os.path.exists(image_path):
                 os.remove(image_path)
-            return file_path
+            return
         else:
+            # Only edit/send the message if not called from a tool call
             if not from_tool_call:
                 await edit_message(initial_message, content="Failed to generate image.")
             return "Failed to generate image."
     except Exception as e:
         print(f"Error generating image: {e}")
+
         if not from_tool_call:
             if hasattr(ctx, "respond"):
                 await ctx.respond("An error occurred while generating the image.")
@@ -1059,22 +1060,22 @@ async def whats_new(ctx, from_tool_call=False):
     """Read the whatsnew.md file and tell users what's new."""
     try:
         whatsnew_path = os.path.join(os.path.dirname(__file__), "whatsnew.md")
-        
+
         if not os.path.exists(whatsnew_path):
             message = "The What's New file couldn't be found. Please check with the bot administrator."
             if not from_tool_call:
                 await ctx.reply(message)
             return message
-            
-        with open(whatsnew_path, 'r') as file:
+
+        with open(whatsnew_path, "r") as file:
             content = file.read()
-            
+
         # If the content is too long, summarize or truncate it
         if len(content) > 1900:
             content = content[:1900] + "\n\n... (truncated)"
-            
+
         message = f"**What's New in LocalBot**\n\n{content}"
-        
+
         if not from_tool_call:
             await ctx.reply(message)
         return message
