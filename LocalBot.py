@@ -242,7 +242,7 @@ async def handle_tool_call(
 
         # Define available tools with type hints
         tool_actions = {
-            "imagine": lambda: imagine(ctx, prompt=tool_arguments.get("prompt"), from_tool_call=send_directly),
+            "imagine": lambda: imagine(ctx, prompt=tool_arguments.get("prompt")),
             "cat": lambda: cat(ctx, from_tool_call=send_directly),
             "dog": lambda: dog(ctx, from_tool_call=send_directly),
             "gtn": lambda: gtn(ctx, from_tool_call=send_directly),
@@ -571,6 +571,8 @@ async def chat(ctx, *, message):
                     # There's another tool call, continue processing
                     response = remaining_text
                 else:
+                    if "imagine" in tool_call_text:
+                        break
                     # No more tool calls, generate final response with all tool results
                     followup_prompt = (
                         f"You used one or more tools to answer the user's question. "
@@ -621,7 +623,7 @@ async def send_complete_response(ctx, response):
 
 
 @bot.slash_command(description="Generate an image based on a prompt.")
-async def imagine(ctx, *, prompt: str, from_tool_call=False) -> None:
+async def imagine(ctx, *, prompt: str) -> None:
     async def send_initial_message():
         if hasattr(ctx, "respond"):
             return await ctx.respond("Generating image, please wait...")
@@ -636,9 +638,7 @@ async def imagine(ctx, *, prompt: str, from_tool_call=False) -> None:
 
     try:
         start_time = time.time()
-
-        # Only send the initial message if not called from a tool call
-        initial_message = await send_initial_message() if not from_tool_call else None
+        initial_message = await send_initial_message()
         image_path = await generate_image(prompt)
         time_taken = time.time() - start_time
 
@@ -649,33 +649,24 @@ async def imagine(ctx, *, prompt: str, from_tool_call=False) -> None:
             )
             embed.set_image(url=f"attachment://{os.path.basename(image_path)}")
             embed.set_footer(text=f"Time taken: {time_taken:.2f}s")
-
-            # Only edit/send the message if not called from a tool call
-            if not from_tool_call:
-                await edit_message(
-                    initial_message,
-                    content=None,
-                    embed=embed,
-                    file=discord.File(image_path),
-                )
-
+            await edit_message(
+                initial_message,
+                content=None,
+                embed=embed,
+                file=discord.File(image_path),
+            )
             if os.path.exists(image_path):
                 os.remove(image_path)
-            return
+
+            return "Image generated and sent successfully."
         else:
-            # Only edit/send the message if not called from a tool call
-            if not from_tool_call:
-                await edit_message(initial_message, content="Failed to generate image.")
-            return "Failed to generate image."
+            await edit_message(initial_message, content="Failed to generate image.")
     except Exception as e:
         print(f"Error generating image: {e}")
-
-        if not from_tool_call:
-            if hasattr(ctx, "respond"):
-                await ctx.respond("An error occurred while generating the image.")
-            else:
-                await ctx.reply("An error occurred while generating the image.")
-        return f"Error: {str(e)}"
+        if hasattr(ctx, "respond"):
+            await ctx.respond("An error occurred while generating the image.")
+        else:
+            await ctx.reply("An error occurred while generating the image.")
 
 
 @bot.slash_command(description="Delete a set number of messages.")
