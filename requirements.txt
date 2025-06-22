@@ -20,6 +20,3 @@ google-genai
 langchain
 langchain-community
 langchain-core
-
-# API Services
-wolframalpha

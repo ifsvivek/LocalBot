@@ -1,4 +1,4 @@
-import os, random, asyncio, aiohttp, json, lyricsgenius, discord, wolframalpha
+import os, time, random, asyncio, aiohttp, json, lyricsgenius, discord
 from discord.ext import commands, tasks
 import yt_dlp as youtube_dl
 from typing import Optional
@@ -59,9 +59,20 @@ Then I'll receive the tool results and generate a final comprehensive response l
 Available Tools:
 1. Information & Utility
    • weather [city] - Current weather conditions
-   • calculate [query] - Math, time, date, general knowledge
+   • calculate [query] - Wolfram Alpha queries for:
+     - Mathematical calculations (2+2, solve x^2=16, derivatives, integrals)
+     - Unit conversions (100 km to miles, 50 celsius to fahrenheit)
+     - Scientific data (density of gold, speed of light, periodic table info)
+     - Geographic information (population of Tokyo, area of France)
+     - Historical facts (when was Einstein born, World War 2 dates)
+     - Astronomical data (distance to moon, sunrise time in Paris)
+     - Financial data (current exchange rates, stock prices)
+     - General knowledge (tallest mountain, largest ocean, capital cities)
+     - Statistics and comparisons (compare GDP of countries)
+     - Date/time calculations (days between dates, time zones)
    • lyrics [song] - Get song lyrics
    • whats_new - Display recent bot updates and new features
+
 2. Entertainment & Games
    • gtn - Number guessing game
    • dice [sides] - Roll dice (default: 6)
@@ -87,6 +98,15 @@ Response Guidelines:
 • Format responses for readability
 • When using tools, focus on incorporating tool results naturally in your final response
 • For music playback, check if the user is in a voice channel first
+• Use the calculate tool for ANY factual information, data, or knowledge queries - not just math!
+• Examples of calculate tool usage:
+  - "What's the population of Japan?" → calculate
+  - "Convert 5 feet to meters" → calculate
+  - "When was the iPhone first released?" → calculate
+  - "What's the chemical formula for water?" → calculate
+  - "Distance between Earth and Mars" → calculate
+• When you receive image URLs from tools (especially calculate), include them directly in your response - Discord will automatically display the images
+• Image URLs should be included on separate lines for best display
 
 Note: Process user messages in format "username: message" but respond to message content only.
 """
@@ -130,32 +150,82 @@ def random_bright_color():
 
 
 async def calculate(ctx, query, from_tool_call=False):
-    client = wolframalpha.Client(WOLF)
-    loop = asyncio.get_running_loop()
+    """Calculate using Wolfram Alpha LLM API."""
     try:
-        res = await loop.run_in_executor(None, client.query, query)
-        result_texts = []
-        image_links = []
-        for pod in res.pods:
-            if "subpod" in pod:
-                subpods = (
-                    pod["subpod"]
-                    if isinstance(pod["subpod"], list)
-                    else [pod["subpod"]]
-                )
-                for subpod in subpods:
-                    if "plaintext" in subpod and subpod["plaintext"]:
-                        result_texts.append(subpod["plaintext"])
-                    if "img" in subpod and "@src" in subpod["img"]:
-                        image_links.append(subpod["img"]["@src"])
-        if result_texts and not from_tool_call:
-            await send_response(ctx, result_texts[1])
-        return result_texts[1] if result_texts else "No results found"
+        base_url = "https://www.wolframalpha.com/api/v1/llm-api"
+        params = {"input": query, "appid": WOLF, "maxchars": 2000}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(base_url, params=params) as response:
+                if response.status == 200:
+                    result = await response.text()
+
+                    # Extract image URLs from the result
+                    image_urls = []
+                    lines = result.split("\n")
+                    for line in lines:
+                        if (
+                            line.strip().startswith("image: https://")
+                            or line.strip().startswith("Image:")
+                            and "https://" in line
+                        ):
+                            # Extract URL from the line
+                            url_start = line.find("https://")
+                            if url_start != -1:
+                                url_end = line.find(" ", url_start)
+                                if url_end == -1:
+                                    url_end = len(line)
+                                image_url = line[url_start:url_end].strip()
+                                if (
+                                    image_url.endswith(".png")
+                                    or image_url.endswith(".jpg")
+                                    or image_url.endswith(".jpeg")
+                                ):
+                                    image_urls.append(image_url)
+
+                    if not from_tool_call:
+                        await send_response(ctx, result)
+                        # Send images if found
+                        if image_urls:
+                            for img_url in image_urls[:3]:  # Limit to 3 images max
+                                try:
+                                    embed = discord.Embed()
+                                    embed.set_image(url=img_url)
+                                    if hasattr(ctx, "respond"):
+                                        await ctx.followup.send(embed=embed)
+                                    else:
+                                        await ctx.send(embed=embed)
+                                except Exception as e:
+                                    pass
+
+                    # Include image URLs in the return for tool calls
+                    if image_urls:
+                        result += f"\n\nImages available: {', '.join(image_urls[:3])}"
+
+                    return result
+                elif response.status == 501:
+                    error_msg = await response.text()
+                    if not from_tool_call:
+                        await send_response(ctx, f"Could not interpret query: {query}")
+                    return (
+                        f"Could not interpret query: {query}. Suggestions: {error_msg}"
+                    )
+                elif response.status == 403:
+                    error_msg = "Invalid or missing Wolfram Alpha API key"
+                    if not from_tool_call:
+                        await send_response(ctx, error_msg)
+                    return error_msg
+                else:
+                    error_msg = f"Wolfram Alpha API error (status {response.status})"
+                    if not from_tool_call:
+                        await send_response(ctx, error_msg)
+                    return error_msg
+
     except Exception as e:
-        print(f"An error occurred: {e}")
+        error_msg = f"Error calculating: {str(e)}"
         if not from_tool_call:
-            await send_response(ctx, "An error occurred while fetching the result.")
-        return f"Error: {str(e)}"
+            await send_response(ctx, "An error occurred while calculating.")
+        return error_msg
 
 
 async def generate_chat_completion(
@@ -173,7 +243,7 @@ async def generate_chat_completion(
 
         if context_key not in conversation_memory:
             conversation_memory[context_key] = ConversationBufferWindowMemory(
-                k=42, memory_key="chat_history", return_messages=True
+                k=42, return_messages=True
             )
 
         memory = conversation_memory[context_key]
@@ -234,7 +304,6 @@ async def generate_chat_completion(
         return response_text
 
     except Exception as e:
-        print(f"Chat completion error: {str(e)}")
         await send_response(ctx, "I encountered an error processing your request.")
         return None
 
@@ -309,13 +378,11 @@ async def handle_tool_call(
 
     except (ValueError, KeyError) as e:
         error_msg = f"Tool call error: {str(e)}"
-        print(error_msg)
         if not send_directly:
             await send_response(ctx, "I encountered an error with the requested tool.")
         return f"Error: {str(e)}"
 
     except Exception as e:
-        print(f"Unexpected tool error: {str(e)}")
         if not send_directly:
             await send_response(ctx, "An unexpected error occurred.")
         return f"Error: {str(e)}"
@@ -496,7 +563,7 @@ async def chat(ctx, *, message):
             global conversation_memory
             if context_key not in conversation_memory:
                 conversation_memory[context_key] = ConversationBufferWindowMemory(
-                    k=42, memory_key="chat_history", return_messages=True
+                    k=42, return_messages=True
                 )
 
             memory = conversation_memory[context_key]
@@ -536,8 +603,6 @@ async def chat(ctx, *, message):
                         send_directly=True,
                     )
 
-                    print(f"Tool result: {tool_result}")
-
                     remaining_text = response[tool_end:].strip()
 
                     if "<tool_calls>" in remaining_text:
@@ -568,7 +633,6 @@ async def chat(ctx, *, message):
                 await send_complete_response(ctx, response)
 
         except Exception as e:
-            print(f"Error in chat command: {e}")
             await send_response(ctx, f"An error occurred: {e}")
 
 
