@@ -1,18 +1,10 @@
-import os, time, random, asyncio, aiohttp, json, lyricsgenius, discord, base64, wolframalpha
+import os, time, random, asyncio, aiohttp, json, lyricsgenius, discord, wolframalpha
 from discord.ext import commands, tasks
 import yt_dlp as youtube_dl
-from PIL import Image
-from io import BytesIO
-from typing import Union, Optional
-from langchain.chains import LLMChain
-from langchain_core.prompts import (
-    ChatPromptTemplate,
-    HumanMessagePromptTemplate,
-    MessagesPlaceholder,
-)
-from langchain_core.messages import SystemMessage
+from typing import Optional
 from langchain.chains.conversation.memory import ConversationBufferWindowMemory
-from langchain_groq import ChatGroq
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -20,6 +12,7 @@ TOKEN = os.getenv("TOKEN")
 GENIUS_TOKEN = os.getenv("GENIUS_TOKEN")
 WOLF = os.getenv("WOLF")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -37,7 +30,7 @@ System: I am LocalBot, a helpful discord bot focused on providing a natural and 
 
 My core abilities include:
 • Casual conversation with emojis (used moderately)
-• Generating images and playing music
+• Playing music and entertainment
 • Weather updates and calculations
 • Games and entertainment
 
@@ -70,7 +63,6 @@ Available Tools:
    • lyrics [song] - Get song lyrics
    • whats_new - Display recent bot updates and new features
 2. Entertainment & Games
-   • imagine [prompt] - Generate images
    • gtn - Number guessing game
    • dice [sides] - Roll dice (default: 6)
    • flip - Flip a coin
@@ -99,9 +91,8 @@ Response Guidelines:
 Note: Process user messages in format "username: message" but respond to message content only.
 """
 
-groq_api_key = os.environ.get("GROQ_API_KEY")
-model_name = "meta-llama/llama-4-scout-17b-16e-instruct"
-groq_chat = ChatGroq(groq_api_key=groq_api_key, model_name=model_name)
+# Initialize Gemini client
+gemini_client = genai.Client(api_key=GOOGLE_API_KEY) if GOOGLE_API_KEY else None
 
 ytdl_format_options = {
     "format": "bestaudio/best",
@@ -113,6 +104,7 @@ ytdl_format_options = {
 }
 
 ffmpeg_options = {
+    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options": "-vn",
 }
 
@@ -175,7 +167,7 @@ async def generate_chat_completion(
     prompt: str,
     is_tool_followup: bool = False,
 ) -> Optional[str]:
-    """Generate a chat completion response."""
+    """Generate a chat completion response using Gemini."""
     try:
         global conversation_memory
         context_key = server_id if server_id else f"DM-{channel_id}-{user_id}"
@@ -188,26 +180,57 @@ async def generate_chat_completion(
 
         memory = conversation_memory[context_key]
 
-        # Create prompt template
-        prompt_template = ChatPromptTemplate.from_messages(
-            [
-                SystemMessage(content=system_prompt),
-                MessagesPlaceholder(variable_name="chat_history"),
-                HumanMessagePromptTemplate.from_template("{human_input}"),
-            ]
+        # Check if Gemini client is available
+        if not gemini_client:
+            await send_response(
+                ctx,
+                "Gemini client is not configured. Please check your GOOGLE_API_KEY.",
+            )
+            return None
+
+        # Build conversation history for Gemini
+        conversation_history = []
+
+        # Add system instruction
+        system_content = system_prompt
+
+        # Get chat history from memory
+        chat_history = memory.chat_memory.messages
+
+        # Convert LangChain messages to Gemini format
+        for message in chat_history:
+            if hasattr(message, "content"):
+                if hasattr(message, "type") and message.type == "human":
+                    conversation_history.append(f"User: {message.content}")
+                elif hasattr(message, "type") and message.type == "ai":
+                    conversation_history.append(f"Assistant: {message.content}")
+
+        # Add current prompt
+        conversation_history.append(prompt)
+
+        # Combine system prompt with conversation
+        full_prompt = f"{system_content}\n\nConversation:\n" + "\n".join(
+            conversation_history
         )
 
-        # Initialize conversation chain
-        conversation = LLMChain(
-            llm=groq_chat, prompt=prompt_template, memory=memory, verbose=False
+        # Generate response using Gemini
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=full_prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.7,
+                max_output_tokens=1024,
+            ),
         )
 
-        # Generate response
-        response = await asyncio.to_thread(conversation.predict, human_input=prompt)
+        # Extract response text
+        response_text = response.text if hasattr(response, "text") else str(response)
 
-        # We don't process tool calls here anymore, just return the response
-        # Tool calls are now handled in the chat function
-        return response
+        # Update memory with the new interaction
+        memory.chat_memory.add_user_message(prompt)
+        memory.chat_memory.add_ai_message(response_text)
+
+        return response_text
 
     except Exception as e:
         print(f"Chat completion error: {str(e)}")
@@ -242,7 +265,6 @@ async def handle_tool_call(
 
         # Define available tools with type hints
         tool_actions = {
-            "imagine": lambda: imagine(ctx, prompt=tool_arguments.get("prompt")),
             "cat": lambda: cat(ctx, from_tool_call=send_directly),
             "dog": lambda: dog(ctx, from_tool_call=send_directly),
             "gtn": lambda: gtn(ctx, from_tool_call=send_directly),
@@ -303,41 +325,9 @@ async def handle_tool_call(
         return f"Error: {str(e)}"
 
 
-async def generate_image(prompt: str) -> Optional[str]:
-    output_dir = "img"
-    os.makedirs(output_dir, exist_ok=True)
-
-    url = "https://sd.ifsvivek.in/sdapi/v1/txt2img"
-
-    params = {"prompt": prompt, "steps": 50, "sampler_index": "DPM++ 2M"}
-
-    async with aiohttp.ClientSession() as session:
-
-        async with session.post(url, json=params) as response:
-            if response.status == 200:
-
-                data = await response.json()
-                image_data = data.get("images", [])[0]
-
-                image_bytes = base64.b64decode(image_data)
-                image = Image.open(BytesIO(image_bytes))
-                timestamp = int(time.time())
-                image_path = os.path.join(output_dir, f"img_{timestamp}.png")
-                try:
-                    image.save(image_path)
-                    return image_path
-                except Exception as e:
-                    print(f"Error saving image: {e}")
-                    return None
-            else:
-                print(f"Error: Received status code {response.status}")
-                return None
-
-
 statuses = [
     # Interactive Features
     "Ask me anything! 💭",
-    "Creating AI art 🎨",
     "Weather forecasts 🌤️",
     "Playing music 🎵",
     # Games
@@ -380,7 +370,7 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    if bot.user.mentioned_in(message) and not message.author.bot:
+    if bot.user and bot.user.mentioned_in(message) and not message.author.bot:
         ctx = await bot.get_context(message)
         await chat(
             ctx, message=message.content.replace(f"<@{bot.user.id}>", "").strip()
@@ -535,64 +525,63 @@ async def chat(ctx, *, message):
 
             # Process all tool calls in sequence
             tool_was_used = False
-            while "<tool_calls>" in response and "</tool_calls>" in response:
-                tool_was_used = True
-                # Extract the tool call
-                tool_start = response.find("<tool_calls>")
-                tool_end = response.find("</tool_calls>") + len("</tool_calls>")
-                tool_call_text = response[tool_start:tool_end]
+            if response:  # Check if response is not None
+                while "<tool_calls>" in response and "</tool_calls>" in response:
+                    tool_was_used = True
+                    # Extract the tool call
+                    tool_start = response.find("<tool_calls>")
+                    tool_end = response.find("</tool_calls>") + len("</tool_calls>")
+                    tool_call_text = response[tool_start:tool_end]
 
-                # Save text before the tool call - this may contain context that needs to be sent
-                pre_tool_text = response[:tool_start].strip()
-                if pre_tool_text:
-                    # Only send preceding text for the first tool in a sequence
-                    first_tool_call = not any(
-                        "<tool_calls>" in msg.content
-                        for msg in memory.chat_memory.messages
-                        if hasattr(msg, "content")
-                    )
-                    if first_tool_call:
-                        await ctx.reply(pre_tool_text)
+                    # Save text before the tool call - this may contain context that needs to be sent
+                    pre_tool_text = response[:tool_start].strip()
+                    if pre_tool_text:
+                        # Only send preceding text for the first tool in a sequence
+                        first_tool_call = not any(
+                            "<tool_calls>" in msg.content
+                            for msg in memory.chat_memory.messages
+                            if hasattr(msg, "content")
+                        )
+                        if first_tool_call:
+                            await ctx.reply(pre_tool_text)
 
-                # Execute the tool and get results
-                tool_result = await handle_tool_call(
-                    ctx,
-                    tool_call_text,
-                    memory,
-                    send_directly=True,  # Prevent tools from sending their own message
-                )
-
-                print(f"Tool result: {tool_result}")  # Debug print
-
-                # If there's more text after this tool call, check if it contains another tool call
-                remaining_text = response[tool_end:].strip()
-
-                if "<tool_calls>" in remaining_text:
-                    # There's another tool call, continue processing
-                    response = remaining_text
-                else:
-                    if "imagine" in tool_call_text:
-                        break
-                    # No more tool calls, generate final response with all tool results
-                    followup_prompt = (
-                        f"You used one or more tools to answer the user's question. "
-                        f"The last tool result was: {tool_result}. "
-                        f"Please provide a complete response that incorporates all information "
-                        f"and answers the original question fully. Do not use any more tool calls."
+                    # Execute the tool and get results
+                    tool_result = await handle_tool_call(
+                        ctx,
+                        tool_call_text,
+                        memory,
+                        send_directly=True,  # Prevent tools from sending their own message
                     )
 
-                    followup_response = await generate_chat_completion(
-                        ctx=ctx,
-                        prompt=username + ": " + followup_prompt,
-                        server_id=server_id,
-                        channel_id=channel_id,
-                        user_id=user_id,
-                        is_tool_followup=True,
-                    )
+                    print(f"Tool result: {tool_result}")  # Debug print
 
-                    # Send the complete response
-                    await send_complete_response(ctx, followup_response)
-                    break  # Exit the loop as we've processed all tools and sent a response
+                    # If there's more text after this tool call, check if it contains another tool call
+                    remaining_text = response[tool_end:].strip()
+
+                    if "<tool_calls>" in remaining_text:
+                        # There's another tool call, continue processing
+                        response = remaining_text
+                    else:
+                        # No more tool calls, generate final response with all tool results
+                        followup_prompt = (
+                            f"You used one or more tools to answer the user's question. "
+                            f"The last tool result was: {tool_result}. "
+                            f"Please provide a complete response that incorporates all information "
+                            f"and answers the original question fully. Do not use any more tool calls."
+                        )
+
+                        followup_response = await generate_chat_completion(
+                            ctx=ctx,
+                            prompt=username + ": " + followup_prompt,
+                            server_id=server_id,
+                            channel_id=channel_id,
+                            user_id=user_id,
+                            is_tool_followup=True,
+                        )
+
+                        # Send the complete response
+                        await send_complete_response(ctx, followup_response)
+                        break  # Exit the loop as we've processed all tools and sent a response
 
             # If no tool calls were found, send the response directly
             if not tool_was_used:
@@ -620,53 +609,6 @@ async def send_complete_response(ctx, response):
                 await ctx.send(chunk)
     else:
         await ctx.reply(response)
-
-
-@bot.slash_command(description="Generate an image based on a prompt.")
-async def imagine(ctx, *, prompt: str) -> None:
-    async def send_initial_message():
-        if hasattr(ctx, "respond"):
-            return await ctx.respond("Generating image, please wait...")
-        else:
-            return await ctx.reply("Generating image, please wait...")
-
-    async def edit_message(initial_message, content=None, embed=None, file=None):
-        if hasattr(ctx, "respond"):
-            await initial_message.edit(content=content, embed=embed, file=file)
-        else:
-            await initial_message.edit(content=content, embed=embed, file=file)
-
-    try:
-        start_time = time.time()
-        initial_message = await send_initial_message()
-        image_path = await generate_image(prompt)
-        time_taken = time.time() - start_time
-
-        if image_path:
-            embed_title = prompt[:253] + "..." if len(prompt) > 256 else prompt
-            embed = discord.Embed(
-                title=embed_title, color=int(random_bright_color()[1:], 16)
-            )
-            embed.set_image(url=f"attachment://{os.path.basename(image_path)}")
-            embed.set_footer(text=f"Time taken: {time_taken:.2f}s")
-            await edit_message(
-                initial_message,
-                content=None,
-                embed=embed,
-                file=discord.File(image_path),
-            )
-            if os.path.exists(image_path):
-                os.remove(image_path)
-
-            return "Image generated and sent successfully."
-        else:
-            await edit_message(initial_message, content="Failed to generate image.")
-    except Exception as e:
-        print(f"Error generating image: {e}")
-        if hasattr(ctx, "respond"):
-            await ctx.respond("An error occurred while generating the image.")
-        else:
-            await ctx.reply("An error occurred while generating the image.")
 
 
 @bot.slash_command(description="Delete a set number of messages.")
@@ -730,7 +672,11 @@ async def play_song(ctx, info, filename):
     state = await get_server_state(ctx.guild.id)
     state["current_song"] = {"title": info["title"], "filename": filename}
     ctx.voice_client.play(
-        discord.FFmpegPCMAudio(filename, **ffmpeg_options),
+        discord.FFmpegPCMAudio(
+            filename,
+            before_options=ffmpeg_options["before_options"],
+            options=ffmpeg_options["options"],
+        ),
         after=lambda e: bot.loop.create_task(after_playback(e, ctx)),
     )
     await ctx.followup.send(f'Now playing: {info["title"]}')
@@ -770,11 +716,11 @@ async def play(ctx, *, query):
         url = f"ytsearch:{query}"
     try:
         info = ydl.extract_info(url, download=True)
-        if "entries" in info:
+        if info and "entries" in info:
             for entry in info["entries"]:
                 filename = ydl.prepare_filename(entry)
                 state["playlist_queue"].append({"info": entry, "filename": filename})
-        else:
+        elif info:
             filename = ydl.prepare_filename(info)
             state["playlist_queue"].append({"info": info, "filename": filename})
     except Exception as e:
@@ -799,7 +745,7 @@ async def stop(ctx):
 
 
 @bot.slash_command(description="Get lyrics for the current song or a specified song.")
-async def lyrics(ctx, *, song_name: str = None):
+async def lyrics(ctx, *, song_name: Optional[str] = None):
     state = await get_server_state(ctx.guild.id)
     await ctx.response.defer()
     search_title = (
@@ -978,8 +924,9 @@ async def music_play(ctx, query: str, from_tool_call: bool = False) -> str:
         try:
             # Extract info and download
             info = ydl.extract_info(url, download=True)
+            result = "No songs found."  # Default value
 
-            if "entries" in info:
+            if info and "entries" in info:
                 # It's a playlist
                 songs_added = 0
                 for entry in info["entries"]:
@@ -989,7 +936,7 @@ async def music_play(ctx, query: str, from_tool_call: bool = False) -> str:
                     )
                     songs_added += 1
                 result = f"Added {songs_added} songs to the queue from playlist."
-            else:
+            elif info:
                 # It's a single song
                 filename = ydl.prepare_filename(info)
                 state["playlist_queue"].append({"info": info, "filename": filename})
@@ -1004,7 +951,11 @@ async def music_play(ctx, query: str, from_tool_call: bool = False) -> str:
 
                 # Set up playback
                 ctx.voice_client.play(
-                    discord.FFmpegPCMAudio(next_song["filename"], **ffmpeg_options),
+                    discord.FFmpegPCMAudio(
+                        next_song["filename"],
+                        before_options=ffmpeg_options["before_options"],
+                        options=ffmpeg_options["options"],
+                    ),
                     after=lambda e: bot.loop.create_task(after_playback(e, ctx)),
                 )
 
