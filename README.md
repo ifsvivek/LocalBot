@@ -261,6 +261,6 @@ We welcome contributions! Here's how you can help:
 
 ### 🌟 **Star this repo if you found it helpful!**
 
-Made with ❤️ by the LocalBot team
+Made with ❤️ by Vivek Sharma
 
 </div>
