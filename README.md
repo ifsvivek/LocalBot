@@ -5,7 +5,6 @@
 _A powerful Discord bot powered by Google's Gemini AI_
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
-[![Discord.py](https://img.shields.io/badge/Discord.py-2.0+-7289da.svg)](https://discordpy.readthedocs.io/)
 [![Gemini AI](https://img.shields.io/badge/Gemini-AI-4285f4.svg)](https://ai.google.dev/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
