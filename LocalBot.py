@@ -114,17 +114,18 @@ Note: Process user messages in format "username: message" but respond to message
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 ytdl_format_options = {
-    "format": "bestaudio/best",
-    "extractaudio": True,
-    "audioformat": "mp3",
+    "format": "bestaudio[ext=webm]/bestaudio/best",
     "outtmpl": os.path.join(music_dir, "%(title)s.%(ext)s"),
     "restrictfilenames": True,
     "noplaylist": False,
+    "ignoreerrors": True,
+    "prefer_ffmpeg": True,
+    "quiet": True,
 }
 
 ffmpeg_options = {
-    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-    "options": "-vn",
+    "before_options": "-nostdin",
+    "options": "-vn -filter:a loudnorm",
 }
 
 
@@ -715,15 +716,28 @@ async def after_playback(err, ctx):
 async def play_song(ctx, info, filename):
     state = await get_server_state(ctx.guild.id)
     state["current_song"] = {"title": info["title"], "filename": filename}
-    ctx.voice_client.play(
-        discord.FFmpegPCMAudio(
+    
+    # Check if file exists
+    if not os.path.exists(filename):
+        await ctx.followup.send(f"Error: Audio file not found: {filename}")
+        return
+    
+    try:
+        # Create audio source with error handling
+        audio_source = discord.FFmpegPCMAudio(
             filename,
             before_options=ffmpeg_options["before_options"],
             options=ffmpeg_options["options"],
-        ),
-        after=lambda e: bot.loop.create_task(after_playback(e, ctx)),
-    )
-    await ctx.followup.send(f'Now playing: {info["title"]}')
+        )
+        
+        ctx.voice_client.play(
+            audio_source,
+            after=lambda e: bot.loop.create_task(after_playback(e, ctx)),
+        )
+        await ctx.followup.send(f'Now playing: {info["title"]}')
+    except Exception as e:
+        await ctx.followup.send(f"Error playing audio: {str(e)}")
+        print(f"Audio playback error: {e}")
 
 
 @bot.slash_command(description="Play a song or playlist from YouTube.")
@@ -761,11 +775,26 @@ async def play(ctx, *, query):
         info = ydl.extract_info(url, download=True)
         if info and "entries" in info:
             for entry in info["entries"]:
+                # Get the actual downloaded filename
                 filename = ydl.prepare_filename(entry)
-                state["playlist_queue"].append({"info": entry, "filename": filename})
+                actual_file = find_downloaded_file(filename)
+                
+                if actual_file:
+                    state["playlist_queue"].append({"info": entry, "filename": actual_file})
+                else:
+                    print(f"Could not find downloaded file for: {entry.get('title', 'Unknown')}")
+                    
         elif info:
+            # Get the actual downloaded filename
             filename = ydl.prepare_filename(info)
-            state["playlist_queue"].append({"info": info, "filename": filename})
+            actual_file = find_downloaded_file(filename)
+            
+            if actual_file:
+                state["playlist_queue"].append({"info": info, "filename": actual_file})
+            else:
+                await ctx.followup.send(f"Downloaded file not found. Check music directory.")
+                return
+                
     except Exception as e:
         await ctx.followup.send(f"Error: {str(e)}")
         return
@@ -1061,6 +1090,49 @@ async def whats_new(ctx, from_tool_call=False):
         if not from_tool_call:
             await ctx.reply(error_message)
         return error_message
+
+
+def find_downloaded_file(base_filename):
+    """Find the actual downloaded file with various extensions."""
+    possible_extensions = ['.webm', '.mp3', '.m4a', '.mp4', '.opus']
+    base_name = os.path.splitext(base_filename)[0]
+    
+    for ext in possible_extensions:
+        full_path = base_name + ext
+        if os.path.exists(full_path):
+            print(f"Found audio file: {full_path}")
+            return full_path
+    
+    # Also check if the original filename exists
+    if os.path.exists(base_filename):
+        print(f"Found audio file: {base_filename}")
+        return base_filename
+    
+    print(f"No audio file found for: {base_filename}")
+    print(f"Checked: {[base_name + ext for ext in possible_extensions]}")
+    return None
+
+
+@bot.slash_command(description="List downloaded music files for debugging.")
+async def list_music(ctx):
+    """List all files in the music directory for debugging."""
+    try:
+        if not os.path.exists(music_dir):
+            await ctx.respond("Music directory doesn't exist.")
+            return
+            
+        files = os.listdir(music_dir)
+        if not files:
+            await ctx.respond("No files found in music directory.")
+            return
+            
+        file_list = "\n".join(files[:10])  # Show first 10 files
+        if len(files) > 10:
+            file_list += f"\n... and {len(files) - 10} more files"
+            
+        await ctx.respond(f"**Music files ({len(files)} total):**\n```\n{file_list}\n```")
+    except Exception as e:
+        await ctx.respond(f"Error listing music files: {str(e)}")
 
 
 bot.run(TOKEN)
