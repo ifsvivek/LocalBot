@@ -1,4 +1,4 @@
-import os, time, random, asyncio, aiohttp, json, lyricsgenius, discord, wolframalpha
+import os, random, asyncio, aiohttp, json, lyricsgenius, discord, wolframalpha
 from discord.ext import commands, tasks
 import yt_dlp as youtube_dl
 from typing import Optional
@@ -12,7 +12,7 @@ TOKEN = os.getenv("TOKEN")
 GENIUS_TOKEN = os.getenv("GENIUS_TOKEN")
 WOLF = os.getenv("WOLF")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -91,8 +91,7 @@ Response Guidelines:
 Note: Process user messages in format "username: message" but respond to message content only.
 """
 
-# Initialize Gemini client
-gemini_client = genai.Client(api_key=GOOGLE_API_KEY) if GOOGLE_API_KEY else None
+gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 ytdl_format_options = {
     "format": "bestaudio/best",
@@ -172,32 +171,24 @@ async def generate_chat_completion(
         global conversation_memory
         context_key = server_id if server_id else f"DM-{channel_id}-{user_id}"
 
-        # Initialize memory if it doesn't exist for this context
         if context_key not in conversation_memory:
             conversation_memory[context_key] = ConversationBufferWindowMemory(
-                k=10, memory_key="chat_history", return_messages=True
+                k=42, memory_key="chat_history", return_messages=True
             )
 
         memory = conversation_memory[context_key]
 
-        # Check if Gemini client is available
         if not gemini_client:
             await send_response(
                 ctx,
-                "Gemini client is not configured. Please check your GOOGLE_API_KEY.",
+                "Gemini client is not configured. Please check your GEMINI_API_KEY or GOOGLE_API_KEY.",
             )
             return None
 
-        # Build conversation history for Gemini
         conversation_history = []
-
-        # Add system instruction
         system_content = system_prompt
-
-        # Get chat history from memory
         chat_history = memory.chat_memory.messages
 
-        # Convert LangChain messages to Gemini format
         for message in chat_history:
             if hasattr(message, "content"):
                 if hasattr(message, "type") and message.type == "human":
@@ -205,28 +196,38 @@ async def generate_chat_completion(
                 elif hasattr(message, "type") and message.type == "ai":
                     conversation_history.append(f"Assistant: {message.content}")
 
-        # Add current prompt
         conversation_history.append(prompt)
 
-        # Combine system prompt with conversation
         full_prompt = f"{system_content}\n\nConversation:\n" + "\n".join(
             conversation_history
         )
 
-        # Generate response using Gemini
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=full_prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.7,
-                max_output_tokens=1024,
+        contents = [
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_text(text=full_prompt),
+                ],
             ),
+        ]
+
+        generate_content_config = types.GenerateContentConfig(
+            max_output_tokens=1024,
+            temperature=0.7,
+            thinking_config=types.ThinkingConfig(
+                thinking_budget=0,
+            ),
+            response_mime_type="text/plain",
         )
 
-        # Extract response text
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=contents,
+            config=generate_content_config,
+        )
+
         response_text = response.text if hasattr(response, "text") else str(response)
 
-        # Update memory with the new interaction
         memory.chat_memory.add_user_message(prompt)
         memory.chat_memory.add_ai_message(response_text)
 
@@ -246,12 +247,10 @@ async def handle_tool_call(
 ) -> str:
     """Handle tool calls embedded in the response."""
     try:
-        # Extract tool call
         start = tool_call_text.index("<tool_calls>") + len("<tool_calls>")
         end = tool_call_text.index("</tool_calls>")
         tool_call_json = tool_call_text[start:end].strip()
 
-        # Parse tool call
         try:
             tool_call = json.loads(tool_call_json)
         except json.JSONDecodeError:
@@ -263,7 +262,6 @@ async def handle_tool_call(
         if not tool_name:
             raise ValueError("Tool name not specified")
 
-        # Define available tools with type hints
         tool_actions = {
             "cat": lambda: cat(ctx, from_tool_call=send_directly),
             "dog": lambda: dog(ctx, from_tool_call=send_directly),
@@ -299,13 +297,11 @@ async def handle_tool_call(
             "whats_new": lambda: whats_new(ctx, from_tool_call=send_directly),
         }
 
-        # Execute tool
         if tool_name not in tool_actions:
             raise ValueError(f"Unknown tool: {tool_name}")
 
         result = await tool_actions[tool_name]()
 
-        # Update memory with tool result
         if result and memory:
             memory.chat_memory.messages[-1].content += f"\nTool result: {result}"
 
@@ -326,30 +322,24 @@ async def handle_tool_call(
 
 
 statuses = [
-    # Interactive Features
     "Ask me anything! 💭",
     "Weather forecasts 🌤️",
     "Playing music 🎵",
-    # Games
     "Number guessing 🎲",
     "Rolling dice 🎯",
     "Flipping coins 🪙",
-    # Helper Features
     "Managing messages 📝",
     "Fetching lyrics 🎤",
     "Calculating math 🔢",
     "Sharing knowledge 📚",
-    # Fun Statuses
     "Running on local power 🔋",
     "Processing requests ⚡",
     "Thinking in binary 🤖",
     "Learning new tricks 🎓",
-    # Friendly Messages
     "Here to help! 👋",
     "Chat with me 💬",
     "Ready for commands ⌨️",
     "Local assistant 🤝",
-    # System Status
     "Online and active ✨",
     "Fast responses ⚡",
     "24/7 Service 🕒",
@@ -501,20 +491,16 @@ async def chat(ctx, *, message):
             username = ctx.author.display_name
 
             message = username + ": " + message
-
-            # Get the memory context key
             context_key = server_id if server_id else f"DM-{channel_id}-{user_id}"
 
-            # Make sure memory is initialized
             global conversation_memory
             if context_key not in conversation_memory:
                 conversation_memory[context_key] = ConversationBufferWindowMemory(
-                    k=10, memory_key="chat_history", return_messages=True
+                    k=42, memory_key="chat_history", return_messages=True
                 )
 
             memory = conversation_memory[context_key]
 
-            # Initial response generation
             response = await generate_chat_completion(
                 ctx=ctx,
                 prompt=message,
@@ -523,20 +509,18 @@ async def chat(ctx, *, message):
                 user_id=user_id,
             )
 
-            # Process all tool calls in sequence
             tool_was_used = False
-            if response:  # Check if response is not None
+            if response:
                 while "<tool_calls>" in response and "</tool_calls>" in response:
                     tool_was_used = True
-                    # Extract the tool call
+
                     tool_start = response.find("<tool_calls>")
                     tool_end = response.find("</tool_calls>") + len("</tool_calls>")
                     tool_call_text = response[tool_start:tool_end]
 
-                    # Save text before the tool call - this may contain context that needs to be sent
                     pre_tool_text = response[:tool_start].strip()
                     if pre_tool_text:
-                        # Only send preceding text for the first tool in a sequence
+
                         first_tool_call = not any(
                             "<tool_calls>" in msg.content
                             for msg in memory.chat_memory.messages
@@ -545,24 +529,22 @@ async def chat(ctx, *, message):
                         if first_tool_call:
                             await ctx.reply(pre_tool_text)
 
-                    # Execute the tool and get results
                     tool_result = await handle_tool_call(
                         ctx,
                         tool_call_text,
                         memory,
-                        send_directly=True,  # Prevent tools from sending their own message
+                        send_directly=True,
                     )
 
-                    print(f"Tool result: {tool_result}")  # Debug print
+                    print(f"Tool result: {tool_result}")
 
-                    # If there's more text after this tool call, check if it contains another tool call
                     remaining_text = response[tool_end:].strip()
 
                     if "<tool_calls>" in remaining_text:
-                        # There's another tool call, continue processing
+
                         response = remaining_text
                     else:
-                        # No more tool calls, generate final response with all tool results
+
                         followup_prompt = (
                             f"You used one or more tools to answer the user's question. "
                             f"The last tool result was: {tool_result}. "
@@ -579,11 +561,9 @@ async def chat(ctx, *, message):
                             is_tool_followup=True,
                         )
 
-                        # Send the complete response
                         await send_complete_response(ctx, followup_response)
-                        break  # Exit the loop as we've processed all tools and sent a response
+                        break
 
-            # If no tool calls were found, send the response directly
             if not tool_was_used:
                 await send_complete_response(ctx, response)
 
@@ -684,7 +664,7 @@ async def play_song(ctx, info, filename):
 
 @bot.slash_command(description="Play a song or playlist from YouTube.")
 async def play(ctx, *, query):
-    # Check if user is in a voice channel
+
     if not ctx.author.voice:
         await ctx.response.send_message(
             "You need to be in a voice channel to play music.", ephemeral=True
@@ -693,13 +673,12 @@ async def play(ctx, *, query):
 
     state = await get_server_state(ctx.guild.id)
 
-    # Join the user's voice channel if not already connected
     if not ctx.voice_client:
         channel = ctx.author.voice.channel
         await channel.connect()
         await ctx.response.defer()
     else:
-        # If already in a voice channel but it's different from the user's, move to user's channel
+
         if ctx.voice_client.channel != ctx.author.voice.channel:
             await ctx.voice_client.disconnect()
             channel = ctx.author.voice.channel
@@ -800,7 +779,7 @@ async def pin(ctx):
 async def weather(ctx, city: str, from_tool_call: bool = False) -> str:
     """Get current weather for a city using OpenWeatherMap API."""
     try:
-        # Use direct city query instead of geocoding
+
         weather_url = (
             f"https://api.openweathermap.org/data/2.5/weather?"
             f"q={city}&units=metric&appid={WEATHER_API_KEY}"
@@ -818,7 +797,6 @@ async def weather(ctx, city: str, from_tool_call: bool = False) -> str:
 
                 data = await response.json()
 
-                # Extract weather data
                 temp = data["main"]["temp"]
                 feels_like = data["main"]["feels_like"]
                 humidity = data["main"]["humidity"]
@@ -826,10 +804,8 @@ async def weather(ctx, city: str, from_tool_call: bool = False) -> str:
                 weather_desc = data["weather"][0]["description"]
                 pressure = data["main"]["pressure"]
 
-                # Get country code and combine with city name
                 location_name = f"{data['name']}, {data['sys']['country']}"
 
-                # Select weather emoji based on weather condition code
                 weather_id = data["weather"][0]["id"]
                 weather_emoji = "🌈"  # default
                 if weather_id < 300:
@@ -877,7 +853,7 @@ async def getweather(ctx, *, city: str):
 async def music_play(ctx, query: str, from_tool_call: bool = False) -> str:
     """Play music in a voice channel via the chat interface."""
     try:
-        # Check if user is in a voice channel
+
         if not ctx.author.voice:
             message = "You need to be in a voice channel to play music."
             if not from_tool_call:
@@ -886,7 +862,6 @@ async def music_play(ctx, query: str, from_tool_call: bool = False) -> str:
 
         state = await get_server_state(ctx.guild.id)
 
-        # Join the user's voice channel if not already connected
         if not ctx.voice_client:
             channel = ctx.author.voice.channel
             try:
@@ -897,7 +872,7 @@ async def music_play(ctx, query: str, from_tool_call: bool = False) -> str:
                     await ctx.reply(error_msg)
                 return error_msg
         else:
-            # If already in a different voice channel, move to user's channel
+
             if ctx.voice_client.channel != ctx.author.voice.channel:
                 await ctx.voice_client.disconnect()
                 channel = ctx.author.voice.channel
@@ -916,18 +891,17 @@ async def music_play(ctx, query: str, from_tool_call: bool = False) -> str:
         else:
             url = f"ytsearch:{query}"
 
-        # Status message
         status_message = f"Searching for '{query}'..."
         if not from_tool_call:
             await ctx.reply(status_message)
 
         try:
-            # Extract info and download
+
             info = ydl.extract_info(url, download=True)
-            result = "No songs found."  # Default value
+            result = "No songs found."
 
             if info and "entries" in info:
-                # It's a playlist
+
                 songs_added = 0
                 for entry in info["entries"]:
                     filename = ydl.prepare_filename(entry)
@@ -937,19 +911,17 @@ async def music_play(ctx, query: str, from_tool_call: bool = False) -> str:
                     songs_added += 1
                 result = f"Added {songs_added} songs to the queue from playlist."
             elif info:
-                # It's a single song
+
                 filename = ydl.prepare_filename(info)
                 state["playlist_queue"].append({"info": info, "filename": filename})
                 result = f"Added '{info['title']}' to the queue."
 
-            # Start playing if nothing is currently playing
             if not state["current_song"] and state["playlist_queue"]:
                 next_song = state["playlist_queue"].pop(0)
                 title = next_song["info"]["title"]
-                # Direct message handling instead of using followup
+
                 await ctx.send(f"Now playing: {title}")
 
-                # Set up playback
                 ctx.voice_client.play(
                     discord.FFmpegPCMAudio(
                         next_song["filename"],
@@ -1012,7 +984,6 @@ async def whats_new(ctx, from_tool_call=False):
         with open(whatsnew_path, "r") as file:
             content = file.read()
 
-        # If the content is too long, summarize or truncate it
         if len(content) > 1900:
             content = content[:1900] + "\n\n... (truncated)"
 
