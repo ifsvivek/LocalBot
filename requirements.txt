@@ -1,13 +1,25 @@
-py-cord
-discord.py
+# Discord Bot Framework
+py-cord>=2.6.1
+
+# Environment & Configuration
 python-dotenv
+
+# HTTP Client
 aiohttp
-yt_dlp
-pillow
+
+# YouTube Music Downloading
+yt-dlp
+
+# Lyrics API
 lyricsgenius
-diffusers
+
+# AI/ML - Google Gemini
+google-genai
+
+# Memory & Conversation Management
 langchain
 langchain-community
 langchain-core
-langchain-groq
+
+# API Services
 wolframalpha
