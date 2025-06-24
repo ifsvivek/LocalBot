@@ -143,7 +143,6 @@ python LocalBot.py
 | `/calculate [query]`  | 🧮 Solve mathematical queries | `/calculate 2+2*3`       |
 | `/weather [city]`     | 🌤️ Get weather information    | `/weather New York`      |
 | `/getnews [category]` | 📰 Get top news stories       | `/getnews tech`          |
-| `/headlines`          | 📺 Get latest headlines       | `/headlines`             |
 | `/searchnews [query]` | 🔍 Search specific news       | `/searchnews Tesla`      |
 
 </details>
