@@ -12,6 +12,7 @@ TOKEN = os.getenv("TOKEN")
 GENIUS_TOKEN = os.getenv("GENIUS_TOKEN")
 WOLF = os.getenv("WOLF")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
+NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 intents = discord.Intents.default()
@@ -73,20 +74,33 @@ Available Tools:
    • lyrics [song] - Get song lyrics
    • whats_new - Display recent bot updates and new features
 
-2. Entertainment & Games
+2. News & Current Events
+   • news_top [category, country, limit] - Get top news stories (real-time data)
+     - Categories: general, business, tech, science, health, entertainment, sports, politics
+     - Country: in, us, ca, gb, au, etc. (default: in)
+     - Limit: number of articles (1-10, default: 5)
+   • news_headlines [category, country] - Get categorized headlines (real-time data)
+     - Shows latest headlines organized by category
+     - More comprehensive overview of current news
+   • news_search [query, category, limit] - Search for specific news (historical & real-time)
+     - Search for specific topics, people, events, companies
+     - Can filter by category and limit results
+     - Useful for finding news about specific subjects
+
+3. Entertainment & Games
    • gtn - Number guessing game
    • dice [sides] - Roll dice (default: 6)
    • flip - Flip a coin
    • ask [question] - Yes/no answers
 
-3. Media
+4. Media
    • cat - Random cat image
    • dog - Random dog image
    • gt - Sends picture of GT
    • music [query] - Play music in voice channel
    • leave - Disconnect bot from voice channel
 
-4. Management
+5. Management
    • purge [amount] - Delete messages
    • clear [amount] - Clear DM messages
 
@@ -105,10 +119,16 @@ Response Guidelines:
   - "When was the iPhone first released?" → calculate
   - "What's the chemical formula for water?" → calculate
   - "Distance between Earth and Mars" → calculate
+• For news requests, choose the appropriate news tool:
+  - "What's in the news today?" → news_top
+  - "Latest tech news" → news_top with category="tech"
+  - "Headlines" → news_headlines
+  - "News about Tesla" → news_search with query="Tesla"
+  - "What happened with the stock market?" → news_search with query="stock market"
 • When you receive image URLs from tools (especially calculate), include them directly in your response - Discord will automatically display the images
 • Image URLs should be included on separate lines for best display
 
-Note: Process user messages in format "username: message" but respond to message content only.
+Note: Process user messages in format "username: message" but respond to message content only eg: "message content here". Do not include the username in your response.
 """
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
@@ -244,7 +264,7 @@ async def generate_chat_completion(
 
         if context_key not in conversation_memory:
             conversation_memory[context_key] = ConversationBufferWindowMemory(
-                k=42, return_messages=True
+                return_messages=True
             )
 
         memory = conversation_memory[context_key]
@@ -359,6 +379,26 @@ async def handle_tool_call(
             "weather": lambda: weather(
                 ctx, city=tool_arguments.get("city"), from_tool_call=send_directly
             ),
+            "news_top": lambda: news_top_stories(
+                ctx,
+                category=tool_arguments.get("category"),
+                country=tool_arguments.get("country", "in"),
+                limit=int(tool_arguments.get("limit", 5)),
+                from_tool_call=send_directly,
+            ),
+            "news_headlines": lambda: news_headlines(
+                ctx,
+                category=tool_arguments.get("category"),
+                country=tool_arguments.get("country", "in"),
+                from_tool_call=send_directly,
+            ),
+            "news_search": lambda: news_search(
+                ctx,
+                query=tool_arguments.get("query"),
+                category=tool_arguments.get("category"),
+                limit=int(tool_arguments.get("limit", 5)),
+                from_tool_call=send_directly,
+            ),
             "gt": lambda: gt(ctx, from_tool_call=send_directly),
             "music": lambda: music_play(
                 ctx, query=tool_arguments.get("query"), from_tool_call=send_directly
@@ -392,14 +432,17 @@ async def handle_tool_call(
 statuses = [
     "Ask me anything! 💭",
     "Weather forecasts 🌤️",
+    "Latest news updates 📰",
     "Playing music 🎵",
     "Number guessing 🎲",
     "Rolling dice 🎯",
     "Flipping coins 🪙",
     "Managing messages 📝",
     "Fetching lyrics 🎤",
+    "Breaking news alerts 📺",
     "Calculating math 🔢",
     "Sharing knowledge 📚",
+    "Current events 🌍",
     "Running on local power 🔋",
     "Processing requests ⚡",
     "Thinking in binary 🤖",
@@ -564,7 +607,7 @@ async def chat(ctx, *, message):
             global conversation_memory
             if context_key not in conversation_memory:
                 conversation_memory[context_key] = ConversationBufferWindowMemory(
-                    k=42, return_messages=True
+                    return_messages=True
                 )
 
             memory = conversation_memory[context_key]
@@ -716,12 +759,12 @@ async def after_playback(err, ctx):
 async def play_song(ctx, info, filename):
     state = await get_server_state(ctx.guild.id)
     state["current_song"] = {"title": info["title"], "filename": filename}
-    
+
     # Check if file exists
     if not os.path.exists(filename):
         await ctx.followup.send(f"Error: Audio file not found: {filename}")
         return
-    
+
     try:
         # Create audio source with error handling
         audio_source = discord.FFmpegPCMAudio(
@@ -729,7 +772,7 @@ async def play_song(ctx, info, filename):
             before_options=ffmpeg_options["before_options"],
             options=ffmpeg_options["options"],
         )
-        
+
         ctx.voice_client.play(
             audio_source,
             after=lambda e: bot.loop.create_task(after_playback(e, ctx)),
@@ -778,23 +821,29 @@ async def play(ctx, *, query):
                 # Get the actual downloaded filename
                 filename = ydl.prepare_filename(entry)
                 actual_file = find_downloaded_file(filename)
-                
+
                 if actual_file:
-                    state["playlist_queue"].append({"info": entry, "filename": actual_file})
+                    state["playlist_queue"].append(
+                        {"info": entry, "filename": actual_file}
+                    )
                 else:
-                    print(f"Could not find downloaded file for: {entry.get('title', 'Unknown')}")
-                    
+                    print(
+                        f"Could not find downloaded file for: {entry.get('title', 'Unknown')}"
+                    )
+
         elif info:
             # Get the actual downloaded filename
             filename = ydl.prepare_filename(info)
             actual_file = find_downloaded_file(filename)
-            
+
             if actual_file:
                 state["playlist_queue"].append({"info": info, "filename": actual_file})
             else:
-                await ctx.followup.send(f"Downloaded file not found. Check music directory.")
+                await ctx.followup.send(
+                    f"Downloaded file not found. Check music directory."
+                )
                 return
-                
+
     except Exception as e:
         await ctx.followup.send(f"Error: {str(e)}")
         return
@@ -941,6 +990,269 @@ async def weather(ctx, city: str, from_tool_call: bool = False) -> str:
 @bot.slash_command(description="Get current weather for a city.")
 async def getweather(ctx, *, city: str):
     await weather(ctx, city)
+
+
+async def news_top_stories(
+    ctx,
+    category: Optional[str] = None,
+    country: str = "in",
+    limit: int = 5,
+    from_tool_call: bool = False,
+) -> str:
+    """Get top news stories using The News API."""
+    try:
+        if not NEWS_API_KEY:
+            error_msg = "News API key not configured."
+            if not from_tool_call:
+                await send_response(ctx, error_msg)
+            return error_msg
+
+        # Build API URL
+        base_url = "https://api.thenewsapi.com/v1/news/top"
+        params = {
+            "api_token": NEWS_API_KEY,
+            "locale": country,
+            "limit": min(limit, 10),  # Limit to max 10 articles
+            "language": "en",
+        }
+
+        if category:
+            params["categories"] = category
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(base_url, params=params) as response:
+                if response.status != 200:
+                    error_msg = f"News API error: {response.status}"
+                    if not from_tool_call:
+                        await send_response(ctx, "Sorry, I couldn't fetch the news.")
+                    return error_msg
+
+                data = await response.json()
+                articles = data.get("data", [])
+
+                if not articles:
+                    message = "No news articles found."
+                    if not from_tool_call:
+                        await send_response(ctx, message)
+                    return message
+
+                # Format response
+                news_emoji = "📰"
+                category_text = f" in {category}" if category else ""
+                response = f"{news_emoji} **Top Stories{category_text}:**\n\n"
+
+                for i, article in enumerate(articles[:limit], 1):
+                    title = article.get("title", "No title")
+                    description = article.get("description", "")
+                    source = article.get("source", "Unknown")
+                    url = article.get("url", "")
+                    published = article.get("published_at", "")
+
+                    # Truncate description if too long
+                    if description and len(description) > 100:
+                        description = description[:100] + "..."
+
+                    response += f"**{i}. {title}**\n"
+                    if description:
+                        response += f"{description}\n"
+                    response += f"📅 {published[:10]} | 🔗 {source}\n"
+                    if url:
+                        response += f"{url}\n"
+                    response += "\n"
+
+                if not from_tool_call:
+                    await send_response(ctx, response)
+                return response
+
+    except Exception as e:
+        error_msg = f"Error fetching news: {str(e)}"
+        print(error_msg)
+        if not from_tool_call:
+            await send_response(ctx, "Sorry, I couldn't fetch the news.")
+        return error_msg
+
+
+async def news_headlines(
+    ctx,
+    category: Optional[str] = None,
+    country: str = "in",
+    from_tool_call: bool = False,
+) -> str:
+    """Get news headlines using The News API."""
+    try:
+        if not NEWS_API_KEY:
+            error_msg = "News API key not configured."
+            if not from_tool_call:
+                await send_response(ctx, error_msg)
+            return error_msg
+
+        # Build API URL
+        base_url = "https://api.thenewsapi.com/v1/news/headlines"
+        params = {
+            "api_token": NEWS_API_KEY,
+            "locale": country,
+            "language": "en",
+            "headlines_per_category": 6,
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(base_url, params=params) as response:
+                if response.status != 200:
+                    error_msg = f"News API error: {response.status}"
+                    if not from_tool_call:
+                        await send_response(
+                            ctx, "Sorry, I couldn't fetch the headlines."
+                        )
+                    return error_msg
+
+                data = await response.json()
+                headlines_data = data.get("data", {})
+
+                if not headlines_data:
+                    message = "No headlines found."
+                    if not from_tool_call:
+                        await send_response(ctx, message)
+                    return message
+
+                # Format response
+                news_emoji = "📰"
+                response = f"{news_emoji} **Latest Headlines:**\n\n"
+
+                # If specific category requested, show only that category
+                if category and category in headlines_data:
+                    categories_to_show = {category: headlines_data[category]}
+                else:
+                    # Show all categories, limited to avoid long messages
+                    categories_to_show = {
+                        k: v for k, v in list(headlines_data.items())[:3]
+                    }
+
+                for cat_name, articles in categories_to_show.items():
+                    if articles:
+                        response += f"**{cat_name.upper()}:**\n"
+                        for article in articles[:3]:  # Limit to 3 per category
+                            title = article.get("title", "No title")
+                            source = article.get("source", "Unknown")
+                            url = article.get("url", "")
+
+                            response += f"• {title}\n"
+                            response += f"  📰 {source}"
+                            if url:
+                                response += f" | {url}"
+                            response += "\n"
+                        response += "\n"
+
+                if not from_tool_call:
+                    await send_response(ctx, response)
+                return response
+
+    except Exception as e:
+        error_msg = f"Error fetching headlines: {str(e)}"
+        print(error_msg)
+        if not from_tool_call:
+            await send_response(ctx, "Sorry, I couldn't fetch the headlines.")
+        return error_msg
+
+
+async def news_search(
+    ctx,
+    query: str,
+    category: Optional[str] = None,
+    limit: int = 5,
+    from_tool_call: bool = False,
+) -> str:
+    """Search for specific news articles using The News API."""
+    try:
+        if not NEWS_API_KEY:
+            error_msg = "News API key not configured."
+            if not from_tool_call:
+                await send_response(ctx, error_msg)
+            return error_msg
+
+        if not query:
+            error_msg = "Search query is required."
+            if not from_tool_call:
+                await send_response(ctx, error_msg)
+            return error_msg
+
+        # Build API URL
+        base_url = "https://api.thenewsapi.com/v1/news/all"
+        params = {
+            "api_token": NEWS_API_KEY,
+            "search": query,
+            "language": "en",
+            "limit": min(limit, 10),  # Limit to max 10 articles
+            "sort": "relevance_score",
+        }
+
+        if category:
+            params["categories"] = category
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(base_url, params=params) as response:
+                if response.status != 200:
+                    error_msg = f"News API error: {response.status}"
+                    if not from_tool_call:
+                        await send_response(ctx, "Sorry, I couldn't search for news.")
+                    return error_msg
+
+                data = await response.json()
+                articles = data.get("data", [])
+
+                if not articles:
+                    message = f"No news articles found for '{query}'."
+                    if not from_tool_call:
+                        await send_response(ctx, message)
+                    return message
+
+                # Format response
+                search_emoji = "🔍"
+                response = f"{search_emoji} **News Search Results for '{query}':**\n\n"
+
+                for i, article in enumerate(articles[:limit], 1):
+                    title = article.get("title", "No title")
+                    description = article.get("description", "")
+                    source = article.get("source", "Unknown")
+                    url = article.get("url", "")
+                    published = article.get("published_at", "")
+
+                    # Truncate description if too long
+                    if description and len(description) > 120:
+                        description = description[:120] + "..."
+
+                    response += f"**{i}. {title}**\n"
+                    if description:
+                        response += f"{description}\n"
+                    response += f"📅 {published[:10]} | 📰 {source}\n"
+                    if url:
+                        response += f"🔗 {url}\n"
+                    response += "\n"
+
+                if not from_tool_call:
+                    await send_response(ctx, response)
+                return response
+
+    except Exception as e:
+        error_msg = f"Error searching news: {str(e)}"
+        print(error_msg)
+        if not from_tool_call:
+            await send_response(ctx, "Sorry, I couldn't search for news.")
+        return error_msg
+
+
+@bot.slash_command(description="Get top news stories.")
+async def getnews(ctx, category: Optional[str] = None, *, country: str = "in"):
+    await news_top_stories(ctx, category=category, country=country)
+
+
+@bot.slash_command(description="Get latest news headlines.")
+async def headlines(ctx, *, category: Optional[str] = None):
+    await news_headlines(ctx, category=category)
+
+
+@bot.slash_command(description="Search for news articles.")
+async def searchnews(ctx, *, query: str):
+    await news_search(ctx, query=query)
 
 
 async def music_play(ctx, query: str, from_tool_call: bool = False) -> str:
@@ -1094,20 +1406,20 @@ async def whats_new(ctx, from_tool_call=False):
 
 def find_downloaded_file(base_filename):
     """Find the actual downloaded file with various extensions."""
-    possible_extensions = ['.webm', '.mp3', '.m4a', '.mp4', '.opus']
+    possible_extensions = [".webm", ".mp3", ".m4a", ".mp4", ".opus"]
     base_name = os.path.splitext(base_filename)[0]
-    
+
     for ext in possible_extensions:
         full_path = base_name + ext
         if os.path.exists(full_path):
             print(f"Found audio file: {full_path}")
             return full_path
-    
+
     # Also check if the original filename exists
     if os.path.exists(base_filename):
         print(f"Found audio file: {base_filename}")
         return base_filename
-    
+
     print(f"No audio file found for: {base_filename}")
     print(f"Checked: {[base_name + ext for ext in possible_extensions]}")
     return None
@@ -1120,17 +1432,19 @@ async def list_music(ctx):
         if not os.path.exists(music_dir):
             await ctx.respond("Music directory doesn't exist.")
             return
-            
+
         files = os.listdir(music_dir)
         if not files:
             await ctx.respond("No files found in music directory.")
             return
-            
+
         file_list = "\n".join(files[:10])  # Show first 10 files
         if len(files) > 10:
             file_list += f"\n... and {len(files) - 10} more files"
-            
-        await ctx.respond(f"**Music files ({len(files)} total):**\n```\n{file_list}\n```")
+
+        await ctx.respond(
+            f"**Music files ({len(files)} total):**\n```\n{file_list}\n```"
+        )
     except Exception as e:
         await ctx.respond(f"Error listing music files: {str(e)}")
 

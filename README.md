@@ -42,6 +42,7 @@ _Natural conversations • Music playback • Games & Entertainment • Utility 
 ### 🔧 **Utility Functions**
 
 -   🌤️ Weather updates with detailed information
+-   📰 **Real-time news updates and search**
 -   🧮 Mathematical calculations via Wolfram Alpha
 -   🛠️ Message management and moderation tools
 -   💾 Conversation history management
@@ -115,6 +116,10 @@ GOOGLE_API_KEY=your_google_gemini_api_key
 
 # 🌤️ Weather API (Optional)
 WEATHER_API_KEY=your_openweathermap_api_key
+
+# 📰 News API (Optional)
+NEWS_API_KEY=your_thenewsapi_key
+# Default country for news is set to India (in). You can specify other countries when using news commands.
 ```
 
 ### ▶️ **Run the Bot**
@@ -137,6 +142,9 @@ python LocalBot.py
 | `@LocalBot [message]` | 🗣️ Chat with Gemini AI        | `@LocalBot Hello there!` |
 | `/calculate [query]`  | 🧮 Solve mathematical queries | `/calculate 2+2*3`       |
 | `/weather [city]`     | 🌤️ Get weather information    | `/weather New York`      |
+| `/getnews [category]` | 📰 Get top news stories       | `/getnews tech`          |
+| `/headlines`          | 📺 Get latest headlines       | `/headlines`             |
+| `/searchnews [query]` | 🔍 Search specific news       | `/searchnews Tesla`      |
 
 </details>
 
