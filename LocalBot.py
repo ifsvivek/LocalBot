@@ -1,4 +1,4 @@
-import os, time, random, asyncio, aiohttp, json, lyricsgenius, discord
+import os, random, asyncio, aiohttp, json, lyricsgenius, discord
 from discord.ext import commands, tasks
 import yt_dlp as youtube_dl
 from typing import Optional
@@ -86,28 +86,24 @@ When you need to use a tool, wrap the call in special tags:
 - **lyrics** `[song]` - Retrieve song lyrics
 - **whats_new** - Show recent bot updates and features
 
-### 2. News & Current Events
-- **news_top** `[category, country, limit]` - Get top news stories
-  - Categories: general, business, tech, science, health, entertainment, sports, politics
-  - Countries: in, us, ca, gb, au, etc. (default: in)
-  - Limit: 1-3 articles (default: 3)
-- **news_search** `[query, category, limit]` - Search for specific news
-  - Search topics, people, events, companies
-  - Filter by category and limit results
-  - Covers both current and historical news
-
-### 3. Entertainment & Games
+### 2. Entertainment & Games
 - **gtn** - Start a number guessing game (1-10)
 - **dice** `[sides]` - Roll dice (default: 6 sides)
 - **flip** - Flip a coin (heads/tails)
 - **ask** `[question]` - Get yes/no answers to questions
+- **meme** - Get a random meme from Reddit
+- **crypto** `[symbol]` - Get cryptocurrency price
 
-### 4. Media & Content
+### 3. Media & Content
 - **cat** - Share a random cat image
 - **dog** - Share a random dog image  
 - **gt** - Share a picture of GT
 - **music** `[query]` - Play music in voice channel
 - **leave** - Disconnect from voice channel
+
+### 4. Server Information
+- **serverinfo** - Display server information and statistics
+- **userinfo** `[user]` - Display user information
 
 ### 5. Server Management
 - **purge** `[amount]` - Delete recent messages
@@ -401,20 +397,6 @@ async def handle_tool_call(
             "weather": lambda: weather(
                 ctx, city=tool_arguments.get("city"), from_tool_call=send_directly
             ),
-            "news_top": lambda: news_top_stories(
-                ctx,
-                category=tool_arguments.get("category"),
-                country=tool_arguments.get("country", "in"),
-                limit=int(tool_arguments.get("limit", 3)),
-                from_tool_call=send_directly,
-            ),
-            "news_search": lambda: news_search(
-                ctx,
-                query=tool_arguments.get("query"),
-                category=tool_arguments.get("category"),
-                limit=int(tool_arguments.get("limit", 3)),
-                from_tool_call=send_directly,
-            ),
             "gt": lambda: gt(ctx, from_tool_call=send_directly),
             "music": lambda: music_play(
                 ctx, query=tool_arguments.get("query"), from_tool_call=send_directly
@@ -423,6 +405,18 @@ async def handle_tool_call(
             "whats_new": lambda: whats_new(ctx, from_tool_call=send_directly),
             "lyrics": lambda: lyrics(
                 ctx, song_name=tool_arguments.get("song"), from_tool_call=send_directly
+            ),
+            "meme": lambda: meme(ctx, from_tool_call=send_directly),
+            "crypto": lambda: crypto_price(
+                ctx,
+                symbol=tool_arguments.get("symbol"),
+                from_tool_call=send_directly,
+            ),
+            "serverinfo": lambda: server_info(ctx, from_tool_call=send_directly),
+            "userinfo": lambda: user_info(
+                ctx,
+                user=tool_arguments.get("user"),
+                from_tool_call=send_directly,
             ),
         }
 
@@ -1020,184 +1014,6 @@ async def getweather(ctx, *, city: str):
     await weather(ctx, city)
 
 
-async def news_top_stories(
-    ctx,
-    category: Optional[str] = None,
-    country: str = "in",
-    limit: int = 3,
-    from_tool_call: bool = False,
-) -> str:
-    """Get top news stories using The News API."""
-    try:
-        if not NEWS_API_KEY:
-            error_msg = "News API key not configured."
-            if not from_tool_call:
-                await send_response(ctx, error_msg)
-            return error_msg
-
-        # Build API URL
-        base_url = "https://api.thenewsapi.com/v1/news/top"
-        params = {
-            "api_token": NEWS_API_KEY,
-            "locale": country,
-            "limit": min(limit, 3),  # Limit to max 3 articles
-            "language": "en",
-        }
-
-        if category:
-            params["categories"] = category
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(base_url, params=params) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    error_msg = f"News API error {response.status}: {error_text[:200]}"
-                    print(f"News API Error: {response.status} - {error_text}")
-                    if not from_tool_call:
-                        await send_response(ctx, "Sorry, I couldn't fetch the news.")
-                    return error_msg
-
-                data = await response.json()
-                articles = data.get("data", [])
-
-                if not articles:
-                    message = "No news articles found."
-                    if not from_tool_call:
-                        await send_response(ctx, message)
-                    return message
-
-                # Format response
-                news_emoji = "📰"
-                category_text = f" in {category}" if category else ""
-                response = f"{news_emoji} **Top Stories{category_text}:**\n\n"
-
-                for i, article in enumerate(articles[:limit], 1):
-                    title = article.get("title", "No title")
-                    description = article.get("description", "")
-                    source = article.get("source", "Unknown")
-                    url = article.get("url", "")
-                    published = article.get("published_at", "")
-
-                    # Truncate description if too long
-                    if description and len(description) > 100:
-                        description = description[:100] + "..."
-
-                    response += f"**{i}. {title}**\n"
-                    if description:
-                        response += f"{description}\n"
-                    response += f"📅 {published[:10]} | 🔗 {source}\n"
-                    if url:
-                        response += f"{url}\n"
-                    response += "\n"
-
-                if not from_tool_call:
-                    await send_response(ctx, response)
-                return response
-
-    except Exception as e:
-        error_msg = f"Error fetching news: {str(e)}"
-        print(f"News API Exception: {error_msg}")
-        if not from_tool_call:
-            await send_response(ctx, "Sorry, I couldn't fetch the news.")
-        return error_msg
-
-
-async def news_search(
-    ctx,
-    query: str,
-    category: Optional[str] = None,
-    limit: int = 3,
-    from_tool_call: bool = False,
-) -> str:
-    """Search for specific news articles using The News API."""
-    try:
-        if not NEWS_API_KEY:
-            error_msg = "News API key not configured."
-            if not from_tool_call:
-                await send_response(ctx, error_msg)
-            return error_msg
-
-        if not query:
-            error_msg = "Search query is required."
-            if not from_tool_call:
-                await send_response(ctx, error_msg)
-            return error_msg
-
-        # Build API URL
-        base_url = "https://api.thenewsapi.com/v1/news/all"
-        params = {
-            "api_token": NEWS_API_KEY,
-            "search": query,
-            "language": "en",
-            "limit": min(limit, 3),  # Limit to max 3 articles
-            "sort": "relevance_score",
-        }
-
-        if category:
-            params["categories"] = category
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(base_url, params=params) as response:
-                if response.status != 200:
-                    error_msg = f"News API error: {response.status}"
-                    if not from_tool_call:
-                        await send_response(ctx, "Sorry, I couldn't search for news.")
-                    return error_msg
-
-                data = await response.json()
-                articles = data.get("data", [])
-
-                if not articles:
-                    message = f"No news articles found for '{query}'."
-                    if not from_tool_call:
-                        await send_response(ctx, message)
-                    return message
-
-                # Format response
-                search_emoji = "🔍"
-                response = f"{search_emoji} **News Search Results for '{query}':**\n\n"
-
-                for i, article in enumerate(articles[:limit], 1):
-                    title = article.get("title", "No title")
-                    description = article.get("description", "")
-                    source = article.get("source", "Unknown")
-                    url = article.get("url", "")
-                    published = article.get("published_at", "")
-
-                    # Truncate description if too long
-                    if description and len(description) > 120:
-                        description = description[:120] + "..."
-
-                    response += f"**{i}. {title}**\n"
-                    if description:
-                        response += f"{description}\n"
-                    response += f"📅 {published[:10]} | 📰 {source}\n"
-                    if url:
-                        response += f"🔗 {url}\n"
-                    response += "\n"
-
-                if not from_tool_call:
-                    await send_response(ctx, response)
-                return response
-
-    except Exception as e:
-        error_msg = f"Error searching news: {str(e)}"
-        print(error_msg)
-        if not from_tool_call:
-            await send_response(ctx, "Sorry, I couldn't search for news.")
-        return error_msg
-
-
-@bot.slash_command(description="Get top news stories.")
-async def getnews(ctx, category: Optional[str] = None, *, country: str = "in"):
-    await news_top_stories(ctx, category=category, country=country)
-
-
-@bot.slash_command(description="Search for news articles.")
-async def searchnews(ctx, *, query: str):
-    await news_search(ctx, query=query)
-
-
 async def music_play(ctx, query: str, from_tool_call: bool = False) -> str:
     """Play music in a voice channel via the chat interface."""
     try:
@@ -1390,6 +1206,263 @@ async def list_music(ctx):
         )
     except Exception as e:
         await ctx.respond(f"Error listing music files: {str(e)}")
+
+
+async def meme(ctx, from_tool_call=False):
+    """Get a random meme from Reddit."""
+    try:
+        subreddits = ["memes", "dankmemes", "me_irl", "wholesomememes", "funny"]
+        subreddit = random.choice(subreddits)
+
+        async with aiohttp.ClientSession() as session:
+            # Try to get a meme from the subreddit's hot posts
+            async with session.get(
+                f"https://www.reddit.com/r/{subreddit}/hot.json?limit=50",
+                headers={"User-Agent": "LocalBot/1.0"},
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    posts = data.get("data", {}).get("children", [])
+
+                    # Filter for image posts
+                    image_posts = [
+                        post
+                        for post in posts
+                        if post["data"]
+                        .get("url", "")
+                        .endswith((".jpg", ".png", ".gif", ".jpeg"))
+                        and not post["data"].get("over_18", False)
+                    ]
+
+                    if image_posts:
+                        post_data = random.choice(image_posts)["data"]
+                        title = post_data.get("title", "No title")
+                        url = post_data.get("url", "")
+                        ups = post_data.get("ups", 0)
+
+                        message = f"**{title}** 👍 {ups}\n{url}"
+                        if not from_tool_call:
+                            await send_response(ctx, message)
+                        return message
+
+        # Fallback
+        message = "Couldn't fetch a meme right now. Try again! 😅"
+        if not from_tool_call:
+            await send_response(ctx, message)
+        return message
+    except Exception as e:
+        error_msg = f"Error fetching meme: {str(e)}"
+        print(f"Meme fetch error: {error_msg}")
+        if not from_tool_call:
+            await send_response(ctx, "Failed to fetch a meme. Try again!")
+        return error_msg
+
+
+@bot.slash_command(description="Get a random meme.")
+async def getmeme(ctx):
+    await meme(ctx)
+
+
+async def crypto_price(ctx, symbol: str, from_tool_call=False):
+    """Get cryptocurrency price."""
+    try:
+        symbol_upper = symbol.upper()
+
+        # Map common symbols to CoinGecko IDs
+        symbol_map = {
+            "BTC": "bitcoin",
+            "ETH": "ethereum",
+            "USDT": "tether",
+            "BNB": "binancecoin",
+            "SOL": "solana",
+            "USDC": "usd-coin",
+            "XRP": "ripple",
+            "DOGE": "dogecoin",
+            "ADA": "cardano",
+            "TRX": "tron",
+            "AVAX": "avalanche-2",
+            "SHIB": "shiba-inu",
+            "DOT": "polkadot",
+            "MATIC": "matic-network",
+            "LTC": "litecoin",
+            "DAI": "dai",
+            "LINK": "chainlink",
+            "UNI": "uniswap",
+        }
+
+        coin_id = symbol_map.get(symbol_upper, symbol.lower())
+
+        async with aiohttp.ClientSession() as session:
+            # Try CoinGecko API (more reliable)
+            async with session.get(
+                f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true"
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if coin_id in data:
+                        coin_data = data[coin_id]
+                        price = coin_data.get("usd", 0)
+                        change_24h = coin_data.get("usd_24h_change", 0)
+                        market_cap = coin_data.get("usd_market_cap", 0)
+
+                        # Format numbers
+                        if price >= 1000:
+                            price_str = f"${price:,.0f}"
+                        elif price >= 1:
+                            price_str = f"${price:,.2f}"
+                        else:
+                            price_str = f"${price:.6f}"
+
+                        if market_cap > 1e9:
+                            market_cap_str = f"${market_cap/1e9:.2f}B"
+                        elif market_cap > 1e6:
+                            market_cap_str = f"${market_cap/1e6:.2f}M"
+                        else:
+                            market_cap_str = f"${market_cap:,.0f}"
+
+                        change_emoji = "📈" if change_24h > 0 else "📉"
+                        change_sign = "+" if change_24h > 0 else ""
+
+                        message = (
+                            f"💰 **{symbol_upper}**\n"
+                            f"💵 Price: {price_str}\n"
+                            f"{change_emoji} 24h Change: {change_sign}{change_24h:.2f}%\n"
+                            f"📊 Market Cap: {market_cap_str}"
+                        )
+
+                        if not from_tool_call:
+                            await send_response(ctx, message)
+                        return message
+
+        message = f"Couldn't find price for {symbol_upper}. Try BTC, ETH, SOL, or other popular cryptocurrencies."
+        if not from_tool_call:
+            await send_response(ctx, message)
+        return message
+    except Exception as e:
+        error_msg = f"Error fetching crypto price: {str(e)}"
+        if not from_tool_call:
+            await send_response(ctx, f"Failed to get price for {symbol}.")
+        return error_msg
+
+
+@bot.slash_command(description="Get cryptocurrency price.")
+async def crypto(ctx, *, symbol: str):
+    await crypto_price(ctx, symbol)
+
+
+async def server_info(ctx, from_tool_call=False):
+    """Display server information."""
+    try:
+        if not ctx.guild:
+            message = "This command only works in servers, not DMs."
+            if not from_tool_call:
+                await send_response(ctx, message)
+            return message
+
+        guild = ctx.guild
+
+        # Get various counts
+        text_channels = len(guild.text_channels)
+        voice_channels = len(guild.voice_channels)
+        categories = len(guild.categories)
+        roles = len(guild.roles)
+        emojis = len(guild.emojis)
+
+        # Get member stats
+        total_members = guild.member_count
+
+        # Get boost info
+        boost_level = guild.premium_tier
+        boost_count = guild.premium_subscription_count
+
+        # Creation date
+        created_at = guild.created_at.strftime("%B %d, %Y")
+
+        message = (
+            f"🏰 **{guild.name}**\n\n"
+            f"👑 Owner: {guild.owner.mention if guild.owner else 'Unknown'}\n"
+            f"👥 Members: {total_members}\n"
+            f"📅 Created: {created_at}\n\n"
+            f"📊 **Channels:**\n"
+            f"💬 Text: {text_channels}\n"
+            f"🔊 Voice: {voice_channels}\n"
+            f"📁 Categories: {categories}\n\n"
+            f"🎭 Roles: {roles}\n"
+            f"😀 Emojis: {emojis}\n"
+            f"⚡ Boost Level: {boost_level} ({boost_count} boosts)"
+        )
+
+        if not from_tool_call:
+            await send_response(ctx, message)
+        return message
+    except Exception as e:
+        error_msg = f"Error getting server info: {str(e)}"
+        if not from_tool_call:
+            await send_response(ctx, "Failed to get server information.")
+        return error_msg
+
+
+@bot.slash_command(description="Display server information.")
+async def serverinfo(ctx):
+    await server_info(ctx)
+
+
+async def user_info(ctx, user: Optional[str] = None, from_tool_call=False):
+    """Display user information."""
+    try:
+        # Get the user to display info about
+        target_user = ctx.author
+        if user and ctx.guild:
+            # Try to get mentioned user
+            if ctx.message and ctx.message.mentions:
+                target_user = ctx.message.mentions[0]
+
+        # Get user details
+        username = target_user.name
+        discriminator = (
+            target_user.discriminator if hasattr(target_user, "discriminator") else ""
+        )
+        user_id = target_user.id
+        created_at = target_user.created_at.strftime("%B %d, %Y")
+        avatar_url = target_user.display_avatar.url
+
+        message = (
+            f"👤 **User Information**\n\n"
+            f"Name: {username}#{discriminator if discriminator != '0' else ''}\n"
+            f"ID: {user_id}\n"
+            f"Created: {created_at}\n"
+            f"Avatar: {avatar_url}"
+        )
+
+        # Add server-specific info if in a guild
+        if ctx.guild and isinstance(target_user, discord.Member):
+            joined_at = (
+                target_user.joined_at.strftime("%B %d, %Y")
+                if target_user.joined_at
+                else "Unknown"
+            )
+            top_role = target_user.top_role.name if target_user.top_role else "None"
+
+            message += (
+                f"\n\n**Server Info:**\n"
+                f"Joined: {joined_at}\n"
+                f"Nickname: {target_user.nick or 'None'}\n"
+                f"Top Role: {top_role}"
+            )
+
+        if not from_tool_call:
+            await send_response(ctx, message)
+        return message
+    except Exception as e:
+        error_msg = f"Error getting user info: {str(e)}"
+        if not from_tool_call:
+            await send_response(ctx, "Failed to get user information.")
+        return error_msg
+
+
+@bot.slash_command(description="Display user information.")
+async def userinfo(ctx, user: Optional[discord.Member] = None):
+    await user_info(ctx, str(user.id) if user else None)
 
 
 bot.run(TOKEN)
