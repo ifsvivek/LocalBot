@@ -1211,7 +1211,16 @@ async def list_music(ctx):
 async def meme(ctx, from_tool_call=False):
     """Get a random meme from Reddit."""
     try:
-        subreddits = ["memes", "dankmemes", "me_irl", "wholesomememes", "funny"]
+        subreddits = [
+            "memes",
+            "dankmemes",
+            "me_irl",
+            "wholesomememes",
+            "funny",
+            "ProgrammerHumor",
+            "PrequelMemes",
+            "terriblefacebookmemes",
+        ]
         subreddit = random.choice(subreddits)
 
         async with aiohttp.ClientSession() as session:

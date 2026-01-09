@@ -20,3 +20,6 @@ google-genai
 langchain
 langchain-community
 langchain-core
+
+# Voice (PyNaCl required for voice support in Discord)
+PyNaCl
