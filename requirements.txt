@@ -7,19 +7,12 @@ python-dotenv
 # HTTP Client
 aiohttp
 
-# YouTube Music Downloading
-yt-dlp
 
-# Lyrics API
-lyricsgenius
-
-# AI/ML - Google Gemini
-google-genai
+# AI/ML - Cerebras (replacing Gemini)
+cerebras_cloud_sdk
+# google-genai
 
 # Memory & Conversation Management
 langchain
 langchain-community
 langchain-core
-
-# Voice (PyNaCl required for voice support in Discord)
-PyNaCl

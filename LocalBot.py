@@ -1,30 +1,20 @@
-import os, random, asyncio, aiohttp, json, lyricsgenius, discord
+import os, random, asyncio, aiohttp, json, discord
 from discord.ext import commands, tasks
-import yt_dlp as youtube_dl
 from typing import Optional
-from langchain.chains.conversation.memory import ConversationBufferWindowMemory
-from google import genai
-from google.genai import types
+from langchain_classic.memory import ConversationBufferWindowMemory
+from cerebras.cloud.sdk import Cerebras
 from dotenv import load_dotenv
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
-GENIUS_TOKEN = os.getenv("GENIUS_TOKEN")
 WOLF = os.getenv("WOLF")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
-NEWS_API_KEY = os.getenv("NEWS_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY")
 
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="$", intents=intents)
 
-music_dir = "music"
-os.makedirs(music_dir, exist_ok=True)
-genius = lyricsgenius.Genius(GENIUS_TOKEN)
-current_song = None
-playlist_queue = []
-server_state = {}
 conversation_memory = {}
 system_prompt = """
 # LocalBot System Instructions
@@ -34,80 +24,27 @@ You are LocalBot, a helpful Discord bot designed to provide a natural and engagi
 
 ## Core Capabilities
 - Natural conversation with thoughtful emoji usage
-- Music streaming and entertainment
 - Real-time weather information
-- Current news and events
 - Interactive games and utilities
 - Mathematical calculations and data queries
 - Media sharing and management
 
-## Tool Calling System
-
-### Tool Call Format
-When you need to use a tool, wrap the call in special tags:
-```
-<tool_calls>
-{"name": "tool-name", "arguments": {"key": "value"}}
-</tool_calls>
-```
-
-### Tool Execution Process
-1. Decide if a tool is needed for the user's request
-2. Include the tool call in your response with proper arguments
-3. The tool will execute automatically
-4. You'll receive the results and provide a complete final response
-5. Integrate tool results naturally into your conversational response
-
-### Example Workflow
-**User Request:** "What's the weather in New York?"
-
-**Initial Response:**
-<tool_calls>
-{"name": "weather", "arguments": {"city": "New York"}}
-</tool_calls>
-
-**Final Response (after tool execution):**
-"The weather in New York is currently 22°C with partly cloudy skies. The humidity is at 45% with a light breeze of 8 mph. It looks like a pleasant day overall! 🌤️"
-
 ## Available Tools
+The following tools are available to you. You should use them whenever necessary to provide accurate and helpful information.
 
-### 1. Information & Knowledge
-- **weather** `[city]` - Get current weather conditions for any city
-- **calculate** `[query]` - Wolfram Alpha powered queries including:
-  - Mathematical calculations (equations, derivatives, integrals)
-  - Unit conversions (metric/imperial, temperature, currency)
-  - Scientific data (constants, formulas, periodic table)
-  - Geographic information (populations, areas, distances)
-  - Historical facts and dates
-  - Astronomical data (distances, times, celestial events)
-  - Financial data (exchange rates, market info)
-  - General knowledge (records, comparisons, statistics)
-  - Date/time calculations and timezone conversions
-- **lyrics** `[song]` - Retrieve song lyrics
-- **whats_new** - Show recent bot updates and features
-
-### 2. Entertainment & Games
-- **gtn** - Start a number guessing game (1-10)
-- **dice** `[sides]` - Roll dice (default: 6 sides)
-- **flip** - Flip a coin (heads/tails)
-- **ask** `[question]` - Get yes/no answers to questions
-- **meme** - Get a random meme from Reddit
-- **crypto** `[symbol]` - Get cryptocurrency price
-
-### 3. Media & Content
-- **cat** - Share a random cat image
-- **dog** - Share a random dog image  
-- **gt** - Share a picture of GT
-- **music** `[query]` - Play music in voice channel
-- **leave** - Disconnect from voice channel
-
-### 4. Server Information
-- **serverinfo** - Display server information and statistics
-- **userinfo** `[user]` - Display user information
-
-### 5. Server Management
-- **purge** `[amount]` - Delete recent messages
-- **clear** `[amount]` - Clear DM messages
+1. **weather** - Get current weather statistics for any city.
+2. **calculate** - Use Wolfram Alpha for any factual information, math, conversions, or data queries.
+3. **lyrics** - Retrieve song lyrics.
+4. **whats_new** - Show recent bot updates and features.
+5. **gtn** - Start a number guessing game.
+6. **dice** - Roll dice.
+7. **flip** - Flip a coin.
+8. **ask** - Get yes/no answers to questions.
+9. **meme** - Get a random meme.
+10. **crypto** - Get cryptocurrency prices.
+11. **cat/dog/gt** - Get random animal or GT pictures.
+12. **serverinfo/userinfo** - Get server or user information.
+13. **purge/clear** - Manage server or DM messages.
 
 ## Response Guidelines
 
@@ -118,18 +55,9 @@ When you need to use a tool, wrap the call in special tags:
 - Provide clear explanations for errors or issues
 - Remember conversation context across interactions
 
-### Tool Usage Rules
-- Use **calculate** for ANY factual information, data queries, or knowledge questions
-- Examples: population data, conversions, historical facts, scientific info, mathematical problems
-- Use **news_top** for general news requests
-- Use **news_search** for specific topics or targeted news queries
-- For music playback, always verify the user is in a voice channel first
-- Integrate tool results naturally into conversational responses
-
 ### Response Formatting
 - Format responses for optimal Discord readability
 - Include image URLs on separate lines for automatic display
-- When receiving URLs from tools (especially calculate), display them directly
 - Structure longer responses with clear sections
 - Use code blocks for technical information when appropriate
 
@@ -148,28 +76,244 @@ When you need to use a tool, wrap the call in special tags:
 - Maintain conversation context per server/DM
 """
 
-gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "calculate",
+            "description": "Perform mathematical calculations or factual queries using Wolfram Alpha.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The math query or factual question.",
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "weather",
+            "description": "Get current weather statistics for a specific city.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {"type": "string", "description": "The name of the city."}
+                },
+                "required": ["city"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cat",
+            "description": "Get a random picture of a cat.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "dog",
+            "description": "Get a random picture of a dog.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "meme",
+            "description": "Get a random meme from Reddit.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "gtn",
+            "description": "Start a number guessing game (1-10).",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "dice",
+            "description": "Roll a dice with a specified number of sides.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sides": {
+                        "type": "integer",
+                        "description": "Number of sides (default 6).",
+                    }
+                },
+                "required": ["sides"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "flip",
+            "description": "Flip a coin.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ask",
+            "description": "Ask a yes/no question.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "The question to ask.",
+                    }
+                },
+                "required": ["question"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "crypto",
+            "description": "Get the current price for a cryptocurrency.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "The crypto symbol (e.g. BTC, ETH).",
+                    }
+                },
+                "required": ["symbol"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "purge",
+            "description": "Delete a specified number of messages.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "amount": {
+                        "type": "integer",
+                        "description": "Number of messages to delete.",
+                    }
+                },
+                "required": ["amount"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "serverinfo",
+            "description": "Get information about the current server.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "userinfo",
+            "description": "Get information about a user.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "user": {
+                        "type": "string",
+                        "description": "The user mention or ID (optional).",
+                    }
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "whats_new",
+            "description": "Show recent bot updates.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "gt",
+            "description": "Share a picture of GT.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+]
 
-ytdl_format_options = {
-    "format": "bestaudio[ext=webm]/bestaudio/best",
-    "outtmpl": os.path.join(music_dir, "%(title)s.%(ext)s"),
-    "restrictfilenames": True,
-    "noplaylist": False,
-    "ignoreerrors": True,
-    "prefer_ffmpeg": True,
-    "quiet": True,
-}
-
-ffmpeg_options = {
-    "before_options": "-nostdin",
-    "options": "-vn -filter:a loudnorm",
-}
-
-
-async def get_server_state(guild_id):
-    if guild_id not in server_state:
-        server_state[guild_id] = {"current_song": None, "playlist_queue": []}
-    return server_state[guild_id]
+cerebras_client = Cerebras(api_key=CEREBRAS_API_KEY) if CEREBRAS_API_KEY else None
 
 
 async def send_response(ctx, message):
@@ -178,13 +322,6 @@ async def send_response(ctx, message):
     else:
         await ctx.reply(message)
     return message
-
-
-def random_bright_color():
-    def bright_value():
-        return random.randint(128, 255)
-
-    return "#{:02X}{:02X}{:02X}".format(bright_value(), bright_value(), bright_value())
 
 
 async def calculate(ctx, query, from_tool_call=False):
@@ -274,7 +411,7 @@ async def generate_chat_completion(
     prompt: str,
     is_tool_followup: bool = False,
 ) -> Optional[str]:
-    """Generate a chat completion response using Gemini."""
+    """Generate a chat completion response using Cerebras with native tool calling."""
     try:
         global conversation_memory
         context_key = server_id if server_id else f"DM-{channel_id}-{user_id}"
@@ -286,55 +423,74 @@ async def generate_chat_completion(
 
         memory = conversation_memory[context_key]
 
-        if not gemini_client:
+        if not cerebras_client:
             await send_response(
                 ctx,
-                "Gemini client is not configured. Please check your GEMINI_API_KEY or GOOGLE_API_KEY.",
+                "Cerebras client is not configured. Please check your CEREBRAS_API_KEY.",
             )
             return None
 
-        conversation_history = []
+        # Build consistent messages format for Cerebras
+        messages = [{"role": "system", "content": system_prompt}]
         chat_history = memory.chat_memory.messages
+        for msg in chat_history:
+            if hasattr(msg, "content"):
+                role = "user" if msg.type == "human" else "assistant"
+                messages.append({"role": role, "content": msg.content})
 
-        for message in chat_history:
-            if hasattr(message, "content"):
-                if hasattr(message, "type") and message.type == "human":
-                    conversation_history.append(f"User: {message.content}")
-                elif hasattr(message, "type") and message.type == "ai":
-                    conversation_history.append(f"Assistant: {message.content}")
+        # Add the current prompt
+        messages.append({"role": "user", "content": prompt})
 
-        conversation_history.append(prompt)
+        models_to_try = ["gpt-oss-120b", "llama-3.3-70b"]
+        response_text = None
+        last_error = None
 
-        full_prompt = "Conversation:\n" + "\n".join(conversation_history)
+        for model_name in models_to_try:
+            try:
+                # Local copy of messages for the loop
+                curr_messages = list(messages)
+                tool_use_depth = 0
+                max_depth = 5
 
-        contents = [
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part.from_text(text=full_prompt),
-                ],
-            ),
-        ]
+                while tool_use_depth < max_depth:
+                    response = cerebras_client.chat.completions.create(
+                        messages=curr_messages,
+                        model=model_name,
+                        tools=TOOLS,
+                        max_completion_tokens=1024,
+                        temperature=0.7,
+                    )
 
-        generate_content_config = types.GenerateContentConfig(
-            max_output_tokens=1024,
-            temperature=0.7,
-            thinking_config=types.ThinkingConfig(
-                thinking_budget=0,
-            ),
-            response_mime_type="text/plain",
-            system_instruction=[
-                types.Part.from_text(text=system_prompt),
-            ],
-        )
+                    assistant_message = response.choices[0].message
+                    curr_messages.append(assistant_message)
 
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=contents,
-            config=generate_content_config,
-        )
+                    if assistant_message.tool_calls:
+                        tool_use_depth += 1
+                        for tool_call in assistant_message.tool_calls:
+                            result = await handle_tool_call(
+                                ctx, tool_call, send_directly=True
+                            )
+                            curr_messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "content": json.dumps({"result": result}),
+                                }
+                            )
+                        continue  # Call model again with tool results
+                    else:
+                        response_text = assistant_message.content
+                        break
 
-        response_text = response.text if hasattr(response, "text") else str(response)
+                if response_text:
+                    break
+            except Exception as e:
+                print(f"Error with model {model_name}: {e}")
+                last_error = e
+                continue
+
+        if not response_text:
+            raise last_error or Exception("Failed to get response from Cerebras models")
 
         memory.chat_memory.add_user_message(prompt)
         memory.chat_memory.add_ai_message(response_text)
@@ -342,32 +498,20 @@ async def generate_chat_completion(
         return response_text
 
     except Exception as e:
+        print(f"Cerebras completion error: {e}")
         await send_response(ctx, "I encountered an error processing your request.")
         return None
 
 
 async def handle_tool_call(
     ctx: commands.Context,
-    tool_call_text: str,
-    memory: ConversationBufferWindowMemory,
+    tool_call,
     send_directly: bool = False,
 ) -> str:
-    """Handle tool calls embedded in the response."""
+    """Handle native tool calls from Cerebras."""
     try:
-        start = tool_call_text.index("<tool_calls>") + len("<tool_calls>")
-        end = tool_call_text.index("</tool_calls>")
-        tool_call_json = tool_call_text[start:end].strip()
-
-        try:
-            tool_call = json.loads(tool_call_json)
-        except json.JSONDecodeError:
-            raise ValueError("Invalid tool call format")
-
-        tool_name = tool_call.get("name")
-        tool_arguments = tool_call.get("arguments", {})
-
-        if not tool_name:
-            raise ValueError("Tool name not specified")
+        tool_name = tool_call.function.name
+        tool_arguments = json.loads(tool_call.function.arguments)
 
         print(f"Executing tool: {tool_name} with arguments: {tool_arguments}")
 
@@ -398,14 +542,7 @@ async def handle_tool_call(
                 ctx, city=tool_arguments.get("city"), from_tool_call=send_directly
             ),
             "gt": lambda: gt(ctx, from_tool_call=send_directly),
-            "music": lambda: music_play(
-                ctx, query=tool_arguments.get("query"), from_tool_call=send_directly
-            ),
-            "leave": lambda: music_leave(ctx, from_tool_call=send_directly),
             "whats_new": lambda: whats_new(ctx, from_tool_call=send_directly),
-            "lyrics": lambda: lyrics(
-                ctx, song_name=tool_arguments.get("song"), from_tool_call=send_directly
-            ),
             "meme": lambda: meme(ctx, from_tool_call=send_directly),
             "crypto": lambda: crypto_price(
                 ctx,
@@ -424,41 +561,27 @@ async def handle_tool_call(
             raise ValueError(f"Unknown tool: {tool_name}")
 
         result = await tool_actions[tool_name]()
-
-        if result and memory:
-            memory.chat_memory.messages[-1].content += f"\nTool result: {result}"
-
         return result
 
-    except (ValueError, KeyError) as e:
-        error_msg = f"Tool call error: {str(e)}"
-        if not send_directly:
-            await send_response(ctx, "I encountered an error with the requested tool.")
-        return f"Error: {str(e)}"
-
     except Exception as e:
-        if not send_directly:
-            await send_response(ctx, "An unexpected error occurred.")
+        print(f"Tool execution error: {e}")
         return f"Error: {str(e)}"
 
 
 statuses = [
     "Ask me anything! 💭",
     "Weather forecasts 🌤️",
-    "Latest news updates 📰",
-    "Playing music 🎵",
+    "Powered by Cerebras AI 🧠",
     "Number guessing 🎲",
     "Rolling dice 🎯",
     "Flipping coins 🪙",
     "Managing messages 📝",
-    "Fetching lyrics 🎤",
-    "Breaking news alerts 📺",
     "Calculating math 🔢",
     "Sharing knowledge 📚",
     "Current events 🌍",
     "Running on local power 🔋",
     "Processing requests ⚡",
-    "Thinking in binary 🤖",
+    "Native tool calling 🛠️",
     "Learning new tricks 🎓",
     "Here to help! 👋",
     "Chat with me 💬",
@@ -467,7 +590,10 @@ statuses = [
     "Online and active ✨",
     "Fast responses ⚡",
     "24/7 Service 🕒",
-    "Version 4.0 🆕",
+    "Version 5.0 🆕",
+    "Crypto prices 💰",
+    "Random memes 😂",
+    "Cat & dog pics 🐱🐶",
 ]
 
 
@@ -614,83 +740,26 @@ async def chat(ctx, *, message):
             user_id = str(ctx.author.id)
             username = ctx.author.display_name
 
-            message = username + ": " + message
-            context_key = server_id if server_id else f"DM-{channel_id}-{user_id}"
-
-            global conversation_memory
-            if context_key not in conversation_memory:
-                conversation_memory[context_key] = ConversationBufferWindowMemory(
-                    return_messages=True
-                )
-
-            memory = conversation_memory[context_key]
+            full_prompt = f"{username}: {message}"
 
             response = await generate_chat_completion(
                 ctx=ctx,
-                prompt=message,
+                prompt=full_prompt,
                 server_id=server_id,
                 channel_id=channel_id,
                 user_id=user_id,
             )
 
-            tool_was_used = False
             if response:
-                while "<tool_calls>" in response and "</tool_calls>" in response:
-                    tool_was_used = True
-
-                    tool_start = response.find("<tool_calls>")
-                    tool_end = response.find("</tool_calls>") + len("</tool_calls>")
-                    tool_call_text = response[tool_start:tool_end]
-
-                    pre_tool_text = response[:tool_start].strip()
-                    if pre_tool_text:
-                        # Check if this is the first tool call in the conversation
-                        first_tool_call = not any(
-                            "<tool_calls>" in msg.content
-                            for msg in memory.chat_memory.messages
-                            if hasattr(msg, "content")
-                        )
-                        if first_tool_call:
-                            await ctx.reply(pre_tool_text)
-
-                    tool_result = await handle_tool_call(
-                        ctx,
-                        tool_call_text,
-                        memory,
-                        send_directly=True,
-                    )
-
-                    remaining_text = response[tool_end:].strip()
-
-                    if "<tool_calls>" in remaining_text:
-
-                        response = remaining_text
-                    else:
-
-                        followup_prompt = (
-                            f"You used one or more tools to answer the user's question. "
-                            f"The last tool result was: {tool_result}. "
-                            f"Please provide a complete response that incorporates all information "
-                            f"and answers the original question fully. Do not use any more tool calls."
-                        )
-
-                        followup_response = await generate_chat_completion(
-                            ctx=ctx,
-                            prompt=username + ": " + followup_prompt,
-                            server_id=server_id,
-                            channel_id=channel_id,
-                            user_id=user_id,
-                            is_tool_followup=True,
-                        )
-
-                        await send_complete_response(ctx, followup_response)
-                        break
-
-            if not tool_was_used:
                 await send_complete_response(ctx, response)
+            else:
+                await ctx.reply(
+                    "I couldn't generate a response. Please try again later."
+                )
 
         except Exception as e:
-            await send_response(ctx, f"An error occurred: {e}")
+            print(f"Chat error: {e}")
+            await ctx.reply(f"An error occurred: {e}")
 
 
 async def send_complete_response(ctx, response):
@@ -732,190 +801,6 @@ async def clear(ctx, amount: int = 5):
         await confirmation_msg.delete()
     else:
         await send_response(ctx, "This command can only be used in direct messages.")
-
-
-@bot.slash_command(description="Join the voice channel.")
-async def join(ctx):
-    if ctx.author.voice:
-        channel = ctx.author.voice.channel
-        await channel.connect()
-        await ctx.response.send_message("Joined the voice channel.")
-    else:
-        await ctx.response.send_message(
-            "You are not in a voice channel!", ephemeral=True
-        )
-
-
-@bot.slash_command(description="Leave the voice channel.")
-async def leave(ctx):
-    if ctx.voice_client:
-        await ctx.voice_client.disconnect()
-        await ctx.response.send_message("Left the voice channel.")
-    else:
-        await ctx.response.send_message("I'm not in a voice channel!", ephemeral=True)
-
-
-async def after_playback(err, ctx):
-    state = await get_server_state(ctx.guild.id)
-
-    if os.path.exists(state["current_song"]["filename"]):
-        os.remove(state["current_song"]["filename"])
-    if err:
-        print(f"Playback error: {err}")
-    if state["playlist_queue"]:
-        next_song = state["playlist_queue"].pop(0)
-        await play_song(ctx, next_song["info"], next_song["filename"])
-    else:
-        state["current_song"] = None
-
-
-async def play_song(ctx, info, filename):
-    state = await get_server_state(ctx.guild.id)
-    state["current_song"] = {"title": info["title"], "filename": filename}
-
-    # Check if file exists
-    if not os.path.exists(filename):
-        await ctx.followup.send(f"Error: Audio file not found: {filename}")
-        return
-
-    try:
-        # Create audio source with error handling
-        audio_source = discord.FFmpegPCMAudio(
-            filename,
-            before_options=ffmpeg_options["before_options"],
-            options=ffmpeg_options["options"],
-        )
-
-        ctx.voice_client.play(
-            audio_source,
-            after=lambda e: bot.loop.create_task(after_playback(e, ctx)),
-        )
-        await ctx.followup.send(f'Now playing: {info["title"]}')
-    except Exception as e:
-        await ctx.followup.send(f"Error playing audio: {str(e)}")
-        print(f"Audio playback error: {e}")
-
-
-@bot.slash_command(description="Play a song or playlist from YouTube.")
-async def play(ctx, *, query):
-
-    if not ctx.author.voice:
-        await ctx.response.send_message(
-            "You need to be in a voice channel to play music.", ephemeral=True
-        )
-        return
-
-    state = await get_server_state(ctx.guild.id)
-
-    if not ctx.voice_client:
-        channel = ctx.author.voice.channel
-        await channel.connect()
-        await ctx.response.defer()
-    else:
-
-        if ctx.voice_client.channel != ctx.author.voice.channel:
-            await ctx.voice_client.disconnect()
-            channel = ctx.author.voice.channel
-            await channel.connect()
-            await ctx.response.defer()
-        else:
-            await ctx.response.defer()
-
-    ydl = youtube_dl.YoutubeDL(ytdl_format_options)
-
-    if "http" in query:
-        url = query
-    else:
-        url = f"ytsearch:{query}"
-    try:
-        info = ydl.extract_info(url, download=True)
-        if info and "entries" in info:
-            for entry in info["entries"]:
-                # Get the actual downloaded filename
-                filename = ydl.prepare_filename(entry)
-                actual_file = find_downloaded_file(filename)
-
-                if actual_file:
-                    state["playlist_queue"].append(
-                        {"info": entry, "filename": actual_file}
-                    )
-                else:
-                    print(
-                        f"Could not find downloaded file for: {entry.get('title', 'Unknown')}"
-                    )
-
-        elif info:
-            # Get the actual downloaded filename
-            filename = ydl.prepare_filename(info)
-            actual_file = find_downloaded_file(filename)
-
-            if actual_file:
-                state["playlist_queue"].append({"info": info, "filename": actual_file})
-            else:
-                await ctx.followup.send(
-                    f"Downloaded file not found. Check music directory."
-                )
-                return
-
-    except Exception as e:
-        await ctx.followup.send(f"Error: {str(e)}")
-        return
-    if not state["current_song"]:
-        next_song = state["playlist_queue"].pop(0)
-        try:
-            await play_song(ctx, next_song["info"], next_song["filename"])
-            state["current_song"] = next_song
-        except Exception as e:
-            await ctx.followup.send(f"Error playing song: {str(e)}")
-
-
-@bot.slash_command(description="Stop the current playback.")
-async def stop(ctx):
-    state = await get_server_state(ctx.guild.id)
-    ctx.voice_client.stop()
-    state["current_song"] = None
-    state["playlist_queue"] = []
-    await ctx.response.send_message("Playback stopped.")
-
-
-@bot.slash_command(description="Get lyrics for the current song or a specified song.")
-async def lyrics(ctx, *, song_name: Optional[str] = None, from_tool_call: bool = False):
-    state = await get_server_state(ctx.guild.id)
-    if not from_tool_call:
-        await ctx.response.defer()
-    search_title = (
-        song_name
-        if song_name
-        else state["current_song"]["title"] if state["current_song"] else None
-    )
-
-    if not search_title:
-        message = "No song is currently playing and no song name was provided."
-        if not from_tool_call:
-            await ctx.followup.send(message)
-        return message
-
-    try:
-        song = genius.search_song(search_title)
-        if song:
-            lyrics_text = song.lyrics
-            if not from_tool_call:
-                if len(lyrics_text) > 2000:
-                    for i in range(0, len(lyrics_text), 2000):
-                        await ctx.followup.send(lyrics_text[i : i + 2000])
-                else:
-                    await ctx.followup.send(lyrics_text)
-            return lyrics_text[:500] + "..." if len(lyrics_text) > 500 else lyrics_text
-        else:
-            message = f"Lyrics for '{search_title}' not found."
-            if not from_tool_call:
-                await ctx.followup.send(message)
-            return message
-    except Exception as e:
-        error_msg = f"Error: {str(e)}"
-        if not from_tool_call:
-            await ctx.followup.send(error_msg)
-        return error_msg
 
 
 @bot.command(description="Clear the conversation history.")
@@ -1014,126 +899,6 @@ async def getweather(ctx, *, city: str):
     await weather(ctx, city)
 
 
-async def music_play(ctx, query: str, from_tool_call: bool = False) -> str:
-    """Play music in a voice channel via the chat interface."""
-    try:
-
-        if not ctx.author.voice:
-            message = "You need to be in a voice channel to play music."
-            if not from_tool_call:
-                await ctx.reply(message)
-            return message
-
-        state = await get_server_state(ctx.guild.id)
-
-        if not ctx.voice_client:
-            channel = ctx.author.voice.channel
-            try:
-                await channel.connect()
-            except discord.errors.ClientException as e:
-                error_msg = f"Couldn't connect to voice channel: {str(e)}"
-                if not from_tool_call:
-                    await ctx.reply(error_msg)
-                return error_msg
-        else:
-
-            if ctx.voice_client.channel != ctx.author.voice.channel:
-                await ctx.voice_client.disconnect()
-                channel = ctx.author.voice.channel
-                try:
-                    await channel.connect()
-                except discord.errors.ClientException as e:
-                    error_msg = f"Couldn't connect to voice channel: {str(e)}"
-                    if not from_tool_call:
-                        await ctx.reply(error_msg)
-                    return error_msg
-
-        ydl = youtube_dl.YoutubeDL(ytdl_format_options)
-
-        if "http" in query:
-            url = query
-        else:
-            url = f"ytsearch:{query}"
-
-        status_message = f"Searching for '{query}'..."
-        if not from_tool_call:
-            await ctx.reply(status_message)
-
-        try:
-
-            info = ydl.extract_info(url, download=True)
-            result = "No songs found."
-
-            if info and "entries" in info:
-
-                songs_added = 0
-                for entry in info["entries"]:
-                    filename = ydl.prepare_filename(entry)
-                    state["playlist_queue"].append(
-                        {"info": entry, "filename": filename}
-                    )
-                    songs_added += 1
-                result = f"Added {songs_added} songs to the queue from playlist."
-            elif info:
-
-                filename = ydl.prepare_filename(info)
-                state["playlist_queue"].append({"info": info, "filename": filename})
-                result = f"Added '{info['title']}' to the queue."
-
-            if not state["current_song"] and state["playlist_queue"]:
-                next_song = state["playlist_queue"].pop(0)
-                title = next_song["info"]["title"]
-
-                await ctx.send(f"Now playing: {title}")
-
-                ctx.voice_client.play(
-                    discord.FFmpegPCMAudio(
-                        next_song["filename"],
-                        before_options=ffmpeg_options["before_options"],
-                        options=ffmpeg_options["options"],
-                    ),
-                    after=lambda e: bot.loop.create_task(after_playback(e, ctx)),
-                )
-
-                state["current_song"] = next_song
-                result = f"Now playing: {title}"
-
-            return result
-
-        except Exception as e:
-            error_message = f"Error: {str(e)}"
-            if not from_tool_call:
-                await ctx.reply(error_message)
-            return error_message
-
-    except Exception as e:
-        error_message = f"Failed to play music: {str(e)}"
-        if not from_tool_call:
-            await ctx.reply(error_message)
-        return error_message
-
-
-async def music_leave(ctx, from_tool_call: bool = False) -> str:
-    """Leave the voice channel via the chat interface."""
-    try:
-        if ctx.voice_client:
-            await ctx.voice_client.disconnect()
-            message = "I've left the voice channel."
-            if not from_tool_call:
-                await ctx.reply(message)
-            return message
-        else:
-            message = "I'm not in a voice channel."
-            if not from_tool_call:
-                await ctx.reply(message)
-            return message
-    except Exception as e:
-        error_message = f"Failed to leave voice channel: {str(e)}"
-        if not from_tool_call:
-            await ctx.reply(error_message)
-        return error_message
-
-
 async def whats_new(ctx, from_tool_call=False):
     """Read the whatsnew.md file and tell users what's new."""
     try:
@@ -1161,51 +926,6 @@ async def whats_new(ctx, from_tool_call=False):
         if not from_tool_call:
             await ctx.reply(error_message)
         return error_message
-
-
-def find_downloaded_file(base_filename):
-    """Find the actual downloaded file with various extensions."""
-    possible_extensions = [".webm", ".mp3", ".m4a", ".mp4", ".opus"]
-    base_name = os.path.splitext(base_filename)[0]
-
-    for ext in possible_extensions:
-        full_path = base_name + ext
-        if os.path.exists(full_path):
-            print(f"Found audio file: {full_path}")
-            return full_path
-
-    # Also check if the original filename exists
-    if os.path.exists(base_filename):
-        print(f"Found audio file: {base_filename}")
-        return base_filename
-
-    print(f"No audio file found for: {base_filename}")
-    print(f"Checked: {[base_name + ext for ext in possible_extensions]}")
-    return None
-
-
-@bot.slash_command(description="List downloaded music files for debugging.")
-async def list_music(ctx):
-    """List all files in the music directory for debugging."""
-    try:
-        if not os.path.exists(music_dir):
-            await ctx.respond("Music directory doesn't exist.")
-            return
-
-        files = os.listdir(music_dir)
-        if not files:
-            await ctx.respond("No files found in music directory.")
-            return
-
-        file_list = "\n".join(files[:10])  # Show first 10 files
-        if len(files) > 10:
-            file_list += f"\n... and {len(files) - 10} more files"
-
-        await ctx.respond(
-            f"**Music files ({len(files)} total):**\n```\n{file_list}\n```"
-        )
-    except Exception as e:
-        await ctx.respond(f"Error listing music files: {str(e)}")
 
 
 async def meme(ctx, from_tool_call=False):
