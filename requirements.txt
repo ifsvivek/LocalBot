@@ -12,7 +12,3 @@ aiohttp
 cerebras_cloud_sdk
 # google-genai
 
-# Memory & Conversation Management
-langchain
-langchain-community
-langchain-core

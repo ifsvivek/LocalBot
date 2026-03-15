@@ -1,7 +1,38 @@
 import os, random, asyncio, aiohttp, json, discord
+from dataclasses import dataclass
 from discord.ext import commands, tasks
 from typing import Optional
-from langchain_classic.memory import ConversationBufferWindowMemory
+
+
+@dataclass
+class _ChatMessage:
+    content: str
+    type: str
+
+
+class _ChatMemory:
+    def __init__(self, k: int = 5):
+        self.messages: list = []
+        self._k = k
+
+    def add_user_message(self, content: str):
+        self.messages.append(_ChatMessage(content=content, type="human"))
+        self._trim()
+
+    def add_ai_message(self, content: str):
+        self.messages.append(_ChatMessage(content=content, type="ai"))
+        self._trim()
+
+    def _trim(self):
+        max_messages = self._k * 2
+        if len(self.messages) > max_messages:
+            self.messages = self.messages[-max_messages:]
+
+
+class ConversationBufferWindowMemory:
+    def __init__(self, return_messages: bool = True, k: int = 5):
+        self.chat_memory = _ChatMemory(k=k)
+
 from cerebras.cloud.sdk import Cerebras
 from dotenv import load_dotenv
 
