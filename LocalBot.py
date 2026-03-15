@@ -33,17 +33,25 @@ class ConversationBufferWindowMemory:
     def __init__(self, return_messages: bool = True, k: int = 5):
         self.chat_memory = _ChatMemory(k=k)
 
-from cerebras.cloud.sdk import Cerebras
+from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 WOLF = os.getenv("WOLF")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
-CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 intents = discord.Intents.default()
 intents.message_content = True
+
+# Python 3.14 removed implicit event loop creation in asyncio.get_event_loop().
+# py-cord 2.6.1 still relies on it during Bot.__init__, so we create one explicitly.
+try:
+    asyncio.get_running_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
 bot = commands.Bot(command_prefix="$", intents=intents)
 
 conversation_memory = {}
@@ -310,7 +318,7 @@ TOOLS = [
                         "description": "The user mention or ID (optional).",
                     }
                 },
-                "required": [],
+                "required": ["user"],
                 "additionalProperties": False,
             },
             "strict": True,
@@ -344,7 +352,7 @@ TOOLS = [
     },
 ]
 
-cerebras_client = Cerebras(api_key=CEREBRAS_API_KEY) if CEREBRAS_API_KEY else None
+groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 
 async def send_response(ctx, message):
@@ -442,7 +450,7 @@ async def generate_chat_completion(
     prompt: str,
     is_tool_followup: bool = False,
 ) -> Optional[str]:
-    """Generate a chat completion response using Cerebras with native tool calling."""
+    """Generate a chat completion response using Groq with native tool calling."""
     try:
         global conversation_memory
         context_key = server_id if server_id else f"DM-{channel_id}-{user_id}"
@@ -454,14 +462,14 @@ async def generate_chat_completion(
 
         memory = conversation_memory[context_key]
 
-        if not cerebras_client:
+        if not groq_client:
             await send_response(
                 ctx,
-                "Cerebras client is not configured. Please check your CEREBRAS_API_KEY.",
+                "Groq client is not configured. Please check your GROQ_API_KEY.",
             )
             return None
 
-        # Build consistent messages format for Cerebras
+        # Build consistent messages format for Groq
         messages = [{"role": "system", "content": system_prompt}]
         chat_history = memory.chat_memory.messages
         for msg in chat_history:
@@ -472,7 +480,7 @@ async def generate_chat_completion(
         # Add the current prompt
         messages.append({"role": "user", "content": prompt})
 
-        models_to_try = ["gpt-oss-120b", "llama-3.3-70b"]
+        models_to_try = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
         response_text = None
         last_error = None
 
@@ -484,7 +492,7 @@ async def generate_chat_completion(
                 max_depth = 5
 
                 while tool_use_depth < max_depth:
-                    response = cerebras_client.chat.completions.create(
+                    response = groq_client.chat.completions.create(
                         messages=curr_messages,
                         model=model_name,
                         tools=TOOLS,
@@ -521,7 +529,7 @@ async def generate_chat_completion(
                 continue
 
         if not response_text:
-            raise last_error or Exception("Failed to get response from Cerebras models")
+            raise last_error or Exception("Failed to get response from Groq models")
 
         memory.chat_memory.add_user_message(prompt)
         memory.chat_memory.add_ai_message(response_text)
@@ -529,7 +537,7 @@ async def generate_chat_completion(
         return response_text
 
     except Exception as e:
-        print(f"Cerebras completion error: {e}")
+        print(f"Groq completion error: {e}")
         await send_response(ctx, "I encountered an error processing your request.")
         return None
 
@@ -539,7 +547,7 @@ async def handle_tool_call(
     tool_call,
     send_directly: bool = False,
 ) -> str:
-    """Handle native tool calls from Cerebras."""
+    """Handle native tool calls from Groq."""
     try:
         tool_name = tool_call.function.name
         tool_arguments = json.loads(tool_call.function.arguments)
@@ -602,7 +610,6 @@ async def handle_tool_call(
 statuses = [
     "Ask me anything! 💭",
     "Weather forecasts 🌤️",
-    "Powered by Cerebras AI 🧠",
     "Number guessing 🎲",
     "Rolling dice 🎯",
     "Flipping coins 🪙",

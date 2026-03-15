@@ -1,5 +1,5 @@
 # Discord Bot Framework
-py-cord>=2.6.1
+py-cord==2.6.1
 audioop-lts  # Required for py-cord on Python 3.13+
 
 # Environment & Configuration
@@ -8,5 +8,5 @@ python-dotenv
 # HTTP Client
 aiohttp
 
-# AI/ML - Cerebras
-cerebras_cloud_sdk
+# AI/ML - Groq
+groq
